@@ -431,44 +431,6 @@ main().catch((error) => {
     return lines.join('\n                ');
   };
 
-  const generateEndpointCall = (endpoint: any) => {
-    const pathParams = endpoint.parameters.filter((p: any) => p.location === 'path');
-    const queryParams = endpoint.parameters.filter((p: any) => p.location === 'query');
-    const bodyParams = endpoint.parameters.filter((p: any) => p.location === 'body');
-
-    let path = endpoint.path;
-    pathParams.forEach((param: any) => {
-      path = path.replace(`{${param.name}}`, `{arguments['${param.name}']}`);
-    });
-
-    const lines = [];
-    
-    if (queryParams.length > 0) {
-      lines.push('params = {}');
-      queryParams.forEach((param: any) => {
-        lines.push(`if '${param.name}' in arguments: params['${param.name}'] = arguments['${param.name}']`);
-      });
-    }
-
-    if (bodyParams.length > 0) {
-      lines.push('data = {}');
-      bodyParams.forEach((param: any) => {
-        lines.push(`if '${param.name}' in arguments: data['${param.name}'] = arguments['${param.name}']`);
-      });
-    }
-
-    const methodCall = endpoint.method.toLowerCase();
-    const callArgs = [`"${path}"`];
-    
-    if (queryParams.length > 0) callArgs.push('params=params');
-    if (bodyParams.length > 0) callArgs.push('json=data');
-
-    lines.push(`response = await client.${methodCall}(${callArgs.join(', ')})`);
-    lines.push('response.raise_for_status()');
-
-    return lines.join('\n                    ');
-  };
-
   const generateTypeScriptToolHandler = (tool: any) => {
     return tool.endpoints.map((endpoint: any) => {
       const pathParams = endpoint.parameters.filter((p: any) => p.location === 'path');
@@ -548,84 +510,80 @@ main().catch((error) => {
   }
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
+    <div className="max-w-7xl mx-auto space-y-4">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="text-center"
       >
-        <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+        <h1 className="text-2xl md:text-3xl font-bold text-gray-900 mb-3">
           Your MCP Server is Ready!
         </h1>
-        <p className="text-lg text-gray-600 max-w-3xl mx-auto">
+        <p className="text-base text-gray-600 max-w-3xl mx-auto">
           Generated from {endpoints.length} API endpoints with {tools.length} MCP tools and {resources.length} resources.
         </p>
       </motion.div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Configuration Panel */}
-        <div className="space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+        {/* Compact Configuration Panel */}
+        <div className="space-y-4">
           <Card>
-            <CardHeader>
-              <h3 className="text-lg font-semibold">Language & Settings</h3>
+            <CardHeader className="pb-2">
+              <h3 className="text-base font-semibold">Language & Settings</h3>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <CardContent className="space-y-3">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-3">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
                   Programming Language
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     onClick={() => setSelectedLanguage('python')}
-                    className={`p-3 rounded-lg border-2 transition-all ${
+                    className={`p-2 rounded-lg border-2 transition-all text-xs ${
                       selectedLanguage === 'python'
                         ? 'border-blue-500 bg-blue-50'
                         : 'border-gray-200 hover:border-gray-300'
                     }`}
                   >
-                    <Python className="w-6 h-6 mx-auto mb-2 text-blue-600" />
-                    <div className="text-sm font-medium">Python</div>
+                    <Python className="w-4 h-4 mx-auto mb-1 text-blue-600" />
+                    <div className="font-medium">Python</div>
                   </button>
                   <button
                     onClick={() => setSelectedLanguage('typescript')}
-                    className={`p-3 rounded-lg border-2 transition-all ${
+                    className={`p-2 rounded-lg border-2 transition-all text-xs ${
                       selectedLanguage === 'typescript'
                         ? 'border-blue-500 bg-blue-50'
                         : 'border-gray-200 hover:border-gray-300'
                     }`}
                   >
-                    <FileCode className="w-6 h-6 mx-auto mb-2 text-blue-600" />
-                    <div className="text-sm font-medium">TypeScript</div>
+                    <FileCode className="w-4 h-4 mx-auto mb-1 text-blue-600" />
+                    <div className="font-medium">TypeScript</div>
                   </button>
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-gray-200">
-                <h4 className="font-medium text-gray-900 mb-3">Generated Features</h4>
-                <div className="space-y-2 text-sm">
+              <div className="pt-3 border-t border-gray-200">
+                <h4 className="font-medium text-gray-900 mb-2 text-sm">Generated Features</h4>
+                <div className="space-y-1 text-xs">
                   <div className="flex items-center space-x-2">
-                    <CheckCircle2 className="w-4 h-4 text-green-500" />
-                    <span>MCP Tools ({tools.length} functions)</span>
+                    <CheckCircle2 className="w-3 h-3 text-green-500" />
+                    <span>MCP Tools ({tools.length})</span>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <CheckCircle2 className="w-4 h-4 text-green-500" />
-                    <span>MCP Resources ({resources.length} resources)</span>
+                    <CheckCircle2 className="w-3 h-3 text-green-500" />
+                    <span>MCP Resources ({resources.length})</span>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <CheckCircle2 className="w-4 h-4 text-green-500" />
-                    <span>API Integration ({endpoints.length} endpoints)</span>
+                    <CheckCircle2 className="w-3 h-3 text-green-500" />
+                    <span>API Integration ({endpoints.length})</span>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <CheckCircle2 className="w-4 h-4 text-green-500" />
+                    <CheckCircle2 className="w-3 h-3 text-green-500" />
                     <span>Authentication handling</span>
                   </div>
                   <div className="flex items-center space-x-2">
-                    <CheckCircle2 className="w-4 h-4 text-green-500" />
+                    <CheckCircle2 className="w-3 h-3 text-green-500" />
                     <span>Error handling & logging</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <CheckCircle2 className="w-4 h-4 text-green-500" />
-                    <span>Production-ready structure</span>
                   </div>
                 </div>
               </div>
@@ -633,36 +591,39 @@ main().catch((error) => {
           </Card>
 
           <Card>
-            <CardHeader>
-              <h3 className="text-lg font-semibold">Actions</h3>
+            <CardHeader className="pb-2">
+              <h3 className="text-base font-semibold">Actions</h3>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-2">
               <Button 
                 onClick={() => setShowTesting(true)}
-                className="w-full justify-start"
+                className="w-full justify-start text-sm"
+                size="sm"
               >
-                <TestTube className="w-4 h-4 mr-2" />
+                <TestTube className="w-3 h-3 mr-2" />
                 Test Locally
               </Button>
               <Button 
                 onClick={handleDownload}
                 variant="outline" 
-                className="w-full justify-start"
+                className="w-full justify-start text-sm"
+                size="sm"
               >
-                <Download className="w-4 h-4 mr-2" />
+                <Download className="w-3 h-3 mr-2" />
                 Download Code
               </Button>
               <Button 
                 onClick={handleDeploy}
                 loading={isDeploying}
-                className="w-full justify-start"
+                className="w-full justify-start text-sm"
                 disabled={deploymentStatus === 'success'}
+                size="sm"
               >
-                <Cloud className="w-4 h-4 mr-2" />
+                <Cloud className="w-3 h-3 mr-2" />
                 {deploymentStatus === 'success' ? 'Deployed' : 'Deploy to Cloud'}
               </Button>
-              <Button variant="outline" className="w-full justify-start">
-                <Settings className="w-4 h-4 mr-2" />
+              <Button variant="outline" className="w-full justify-start text-sm" size="sm">
+                <Settings className="w-3 h-3 mr-2" />
                 Advanced Settings
               </Button>
             </CardContent>
@@ -674,20 +635,20 @@ main().catch((error) => {
               animate={{ opacity: 1, scale: 1 }}
             >
               <Card className="border-green-200 bg-green-50">
-                <CardContent className="p-4">
-                  <div className="flex items-center space-x-3 mb-3">
-                    <CheckCircle2 className="w-5 h-5 text-green-600" />
-                    <span className="font-medium text-green-900">Deployment Successful!</span>
+                <CardContent className="p-3">
+                  <div className="flex items-center space-x-2 mb-2">
+                    <CheckCircle2 className="w-4 h-4 text-green-600" />
+                    <span className="font-medium text-green-900 text-sm">Deployment Successful!</span>
                   </div>
-                  <p className="text-sm text-green-700 mb-3">
+                  <p className="text-xs text-green-700 mb-2">
                     Your MCP server is now live and ready to use.
                   </p>
                   <div className="flex items-center space-x-2">
-                    <Button size="sm" variant="outline" className="text-green-700 border-green-300">
+                    <Button size="sm" variant="outline" className="text-green-700 border-green-300 text-xs">
                       <ExternalLink className="w-3 h-3 mr-1" />
                       View Live
                     </Button>
-                    <Button size="sm" variant="ghost" className="text-green-700">
+                    <Button size="sm" variant="ghost" className="text-green-700 text-xs">
                       <Copy className="w-3 h-3 mr-1" />
                       Copy URL
                     </Button>
@@ -699,14 +660,14 @@ main().catch((error) => {
         </div>
 
         {/* Code Editor */}
-        <div className="lg:col-span-2">
-          <Card className="h-[700px]">
-            <CardHeader className="pb-3">
+        <div className="lg:col-span-3">
+          <Card className="h-[600px]">
+            <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
-                  <Code2 className="w-5 h-5 text-blue-600" />
-                  <span className="font-semibold">Generated MCP Server</span>
-                  <span className="text-sm text-gray-500">
+                  <Code2 className="w-4 h-4 text-blue-600" />
+                  <span className="font-semibold text-sm">Generated MCP Server</span>
+                  <span className="text-xs text-gray-500">
                     ({selectedLanguage === 'python' ? 'Python' : 'TypeScript'})
                   </span>
                 </div>
@@ -724,14 +685,14 @@ main().catch((error) => {
             </CardHeader>
             <CardContent className="p-0 h-full">
               <Editor
-                height="600px"
+                height="520px"
                 language={selectedLanguage === 'python' ? 'python' : 'typescript'}
                 value={currentCode}
                 theme="vs-dark"
                 options={{
                   readOnly: false,
                   minimap: { enabled: true },
-                  fontSize: 14,
+                  fontSize: 12,
                   lineNumbers: 'on',
                   scrollBeyondLastLine: false,
                   automaticLayout: true,
@@ -743,22 +704,22 @@ main().catch((error) => {
         </div>
       </div>
 
-      {/* Action Buttons */}
+      {/* Compact Action Buttons */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.3 }}
-        className="flex items-center justify-between pt-6 border-t border-gray-200"
+        className="flex items-center justify-between pt-4 border-t border-gray-200"
       >
-        <Button variant="outline" onClick={onBack}>
+        <Button variant="outline" onClick={onBack} size="sm">
           Back to Mapping
         </Button>
-        <div className="flex items-center space-x-3">
-          <Button variant="outline">
+        <div className="flex items-center space-x-2">
+          <Button variant="outline" size="sm">
             Save Project
           </Button>
-          <Button>
-            <Zap className="w-4 h-4 mr-2" />
+          <Button size="sm">
+            <Zap className="w-3 h-3 mr-2" />
             Create New Server
           </Button>
         </div>

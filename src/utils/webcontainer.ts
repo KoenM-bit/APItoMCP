@@ -56,45 +56,43 @@ export class WebContainerManager {
     return WebContainerManager.webcontainerInstance;
   }
 
-  async createMCPProject(language: 'python' | 'typescript', code: string) {
-    if (!this.webcontainer) {
-      throw new Error('WebContainer not initialized');
-    }
+async createMCPProject(language: 'python' | 'typescript', code: string) {
+  if (!this.webcontainer) {
+    throw new Error('WebContainer not initialized');
+  }
 
-    // Stop any existing server to prevent conflicts
-    if (this.serverProcess) {
-      console.log('Stopping existing server before creating new project...');
-      await this.stopServer();
-    }
+  // Stop any existing server to prevent conflicts
+  if (this.serverProcess) {
+    console.log('Stopping existing server before creating new project...');
+    await this.stopServer();
+  }
 
-    // Clear any previous project files by mounting fresh file system
-    console.log('Creating fresh MCP project with new generated code...');
-    const files: FileSystemTree = {};
+  // Clear any previous project files by mounting fresh file system
+  console.log('Creating fresh MCP project with new generated code...');
+  const files: FileSystemTree = {};
 
-    if (language === 'python') {
-      // For Python, we'll create a Node.js wrapper that simulates the Python MCP server
-      // Since WebContainer only supports Node.js environments
-      files['server.py'] = {
-        file: {
-          contents: code
-        }
-      };
-      
-      files['requirements.txt'] = {
-        file: {
-          contents: `mcp>=1.0.0
+  if (language === 'python') {
+    // Store the actual generated Python code
+    files['server.py'] = {
+      file: {
+        contents: code
+      }
+    };
+    
+    files['requirements.txt'] = {
+      file: {
+        contents: `mcp>=1.0.0
 httpx>=0.25.0
 asyncio-mqtt>=0.11.0
 pydantic>=2.0.0`
-        }
-      };
+      }
+    };
 
-      // Create a real API-calling Node.js MCP server
-      files['server.js'] = {
-        file: {
-          contents: `
-// Real API-calling MCP Server for WebContainer
-// This server makes actual HTTP requests to the JSONPlaceholder API
+    // Create the dynamic Node.js MCP server that parses the Python code
+    files['server.js'] = {
+      file: {
+        contents: `// Dynamic WebContainer MCP Server
+// This server dynamically parses the generated Python MCP server code
 
 const readline = require('readline');
 const fs = require('fs');
@@ -102,40 +100,256 @@ const https = require('https');
 const http = require('http');
 const { URL } = require('url');
 
-// Read the original Python code for reference
+// Dynamic Python MCP Parser Class
+class PythonMCPParser {
+  constructor(pythonCode) {
+    this.pythonCode = pythonCode;
+    this.extractedData = this.parse();
+  }
+
+  parse() {
+    console.error('[PARSER] Starting dynamic Python MCP server parsing...');
+    
+    const result = {
+      serverName: this.extractServerName(),
+      apiBaseUrl: this.extractApiBaseUrl(),
+      tools: this.extractTools(),
+      resources: this.extractResources(),
+      toolHandlers: this.extractToolHandlers()
+    };
+
+    console.error('[PARSER] Parsing complete:', {
+      serverName: result.serverName,
+      apiBaseUrl: result.apiBaseUrl,
+      toolCount: result.tools.length,
+      resourceCount: result.resources.length,
+      handlerCount: Object.keys(result.toolHandlers).length
+    });
+
+    return result;
+  }
+
+  extractServerName() {
+    const match = this.pythonCode.match(/server = Server\\(["']([^"']+)["']\\)/);
+    return match ? match[1] : 'unknown-server';
+  }
+
+  extractApiBaseUrl() {
+    const match = this.pythonCode.match(/API_BASE_URL\\s*=\\s*["']([^"']+)["']/);
+    return match ? match[1] : 'https://api.example.com';
+  }
+
+  extractTools() {
+    console.error('[PARSER] Extracting tools from Python code...');
+    
+    // Find the list_tools function and extract Tool() definitions
+    const toolsPattern = /@server\\.list_tools\\(\\)(.*?)(?=@server\\.|async\\s+def\\s+main|$)/s;
+    const toolsMatch = this.pythonCode.match(toolsPattern);
+    
+    if (!toolsMatch) {
+      console.error('[PARSER] No list_tools function found');
+      return [];
+    }
+
+    const toolsSection = toolsMatch[1];
+    console.error('[PARSER] Found tools section, length:', toolsSection.length);
+
+    // Extract individual Tool() constructor calls - handle multiline schemas
+    const toolPattern = /Tool\\s*\\(\\s*name\\s*=\\s*["']([^"']+)["']\\s*,\\s*description\\s*=\\s*["']([^"']+)["']\\s*,\\s*inputSchema\\s*=\\s*(\\{[\\s\\S]*?\\})\\s*\\)/g;
+    const tools = [];
+    let match;
+
+    while ((match = toolPattern.exec(toolsSection)) !== null) {
+      const [, name, description, schemaStr] = match;
+      console.error('[PARSER] Found tool:', name);
+
+      try {
+        const inputSchema = this.parseInputSchema(schemaStr);
+        
+        tools.push({
+          name: name,
+          description: description,
+          inputSchema: inputSchema
+        });
+      } catch (parseError) {
+        console.error('[PARSER] Failed to parse schema for tool', name, ':', parseError.message);
+        tools.push({
+          name: name,
+          description: description,
+          inputSchema: { type: 'object', properties: {} }
+        });
+      }
+    }
+
+    console.error('[PARSER] Extracted tools:', tools.map(t => t.name));
+    return tools;
+  }
+
+  parseInputSchema(schemaStr) {
+    try {
+      // Clean up the schema string - handle Python to JavaScript conversion
+      let cleanSchema = schemaStr
+        .replace(/\\s+/g, ' ')           // Normalize whitespace
+        .replace(/'/g, '"')             // Convert single quotes to double quotes
+        .replace(/True/g, 'true')       // Convert Python True to JavaScript true
+        .replace(/False/g, 'false')     // Convert Python False to JavaScript false
+        .replace(/None/g, 'null')       // Convert Python None to JavaScript null
+        .trim();
+
+      // Remove trailing commas that might break JSON parsing
+      cleanSchema = cleanSchema.replace(/,(\\s*[}\\]])/g, '$1');
+
+      // Use Function constructor for safe evaluation
+      const schema = new Function('return ' + cleanSchema)();
+      
+      if (typeof schema === 'object' && schema !== null) {
+        return schema;
+      } else {
+        throw new Error('Invalid schema structure');
+      }
+    } catch (error) {
+      console.error('[PARSER] Schema parsing failed:', error.message);
+      return { type: 'object', properties: {} };
+    }
+  }
+
+  extractResources() {
+    console.error('[PARSER] Extracting resources from Python code...');
+    
+    const resourcesPattern = /@server\\.list_resources\\(\\)(.*?)(?=@server\\.|async\\s+def\\s+main|$)/s;
+    const resourcesMatch = this.pythonCode.match(resourcesPattern);
+    
+    if (!resourcesMatch) {
+      console.error('[PARSER] No list_resources function found');
+      return [];
+    }
+
+    const resourcesSection = resourcesMatch[1];
+    
+    const resourcePattern = /Resource\\s*\\(\\s*uri\\s*=\\s*["']([^"']+)["']\\s*,\\s*name\\s*=\\s*["']([^"']+)["']\\s*,\\s*description\\s*=\\s*["']([^"']+)["']\\s*,\\s*mimeType\\s*=\\s*["']([^"']+)["']\\s*\\)/g;
+    const resources = [];
+    let match;
+
+    while ((match = resourcePattern.exec(resourcesSection)) !== null) {
+      const [, uri, name, description, mimeType] = match;
+      console.error('[PARSER] Found resource:', name);
+      
+      resources.push({
+        uri: uri,
+        name: name,
+        description: description,
+        mimeType: mimeType
+      });
+    }
+
+    console.error('[PARSER] Extracted resources:', resources.map(r => r.name));
+    return resources;
+  }
+
+  extractToolHandlers() {
+    console.error('[PARSER] Extracting tool handlers from Python code...');
+    
+    const handlerPattern = /@server\\.call_tool\\(\\)(.*?)(?=async\\s+def\\s+main|$)/s;
+    const handlerMatch = this.pythonCode.match(handlerPattern);
+    
+    if (!handlerMatch) {
+      console.error('[PARSER] No call_tool function found');
+      return {};
+    }
+
+    const handlerSection = handlerMatch[1];
+    const handlers = {};
+
+    const toolHandlerPattern = /(if|elif)\\s+name\\s*==\\s*["']([^"']+)["']\\s*:(.*?)(?=(elif\\s+name\\s*==|else\\s*:|return\\s+\\[TextContent|$))/gs;
+    let match;
+
+    while ((match = toolHandlerPattern.exec(handlerSection)) !== null) {
+      const [, , toolName, handlerCode] = match;
+      console.error('[PARSER] Found handler for tool:', toolName);
+      
+      const handler = this.parseToolHandler(toolName, handlerCode);
+      handlers[toolName] = handler;
+    }
+
+    console.error('[PARSER] Extracted handlers for tools:', Object.keys(handlers));
+    return handlers;
+  }
+
+  parseToolHandler(toolName, handlerCode) {
+    console.error('[PARSER] Parsing handler for:', toolName);
+    
+    const methodPattern = /await\\s+client\\.(\\w+)\\s*\\(/;
+    const methodMatch = handlerCode.match(methodPattern);
+    const method = methodMatch ? methodMatch[1].toUpperCase() : 'GET';
+
+    const pathPattern = /client\\.\\w+\\s*\\(\\s*["']([^"']+)["']/;
+    const pathMatch = handlerCode.match(pathPattern);
+    let path = pathMatch ? pathMatch[1] : '/';
+
+    const pathParamPattern = /(\\w+)\\s*=\\s*arguments\\s*\\[\\s*["'](\\w+)["']\\s*\\]/g;
+    const pathParams = [];
+    let paramMatch;
+    
+    while ((paramMatch = pathParamPattern.exec(handlerCode)) !== null) {
+      const [, varName, argName] = paramMatch;
+      pathParams.push({ varName, argName });
+    }
+
+    const hasParams = handlerCode.includes('params=params') || handlerCode.includes('params=');
+    const hasBody = handlerCode.includes('json=payload') || handlerCode.includes('json=') || 
+                   ['POST', 'PUT', 'PATCH'].includes(method);
+
+    const handler = {
+      method: method,
+      path: path,
+      hasParams: hasParams,
+      hasBody: hasBody,
+      pathParams: pathParams,
+      toolName: toolName
+    };
+
+    console.error('[PARSER] Parsed handler:', handler);
+    return handler;
+  }
+
+  getToolByName(name) {
+    return this.extractedData.tools.find(tool => tool.name === name);
+  }
+
+  getHandlerByName(name) {
+    return this.extractedData.toolHandlers[name];
+  }
+
+  getAllTools() {
+    return this.extractedData.tools;
+  }
+
+  getAllResources() {
+    return this.extractedData.resources;
+  }
+
+  getApiBaseUrl() {
+    return this.extractedData.apiBaseUrl;
+  }
+
+  getServerName() {
+    return this.extractedData.serverName;
+  }
+}
+
+// Read and parse the Python code
 let pythonCode = '';
+let mcpParser = null;
+
 try {
   pythonCode = fs.readFileSync('server.py', 'utf8');
   console.error('✅ Loaded Python code:', pythonCode.length, 'characters');
-  
-  // Debug: Check what API base URL is in the Python code
-  const urlMatch = pythonCode.match(/API_BASE_URL = ["']([^"']+)["']/);
-  if (urlMatch) {
-    console.error('✅ Found API_BASE_URL in Python code:', urlMatch[1]);
-  } else {
-    console.error('❌ No API_BASE_URL found in Python code');
-  }
-
-  // Debug: Check what tools are defined in the Python code
-  const toolMatches = pythonCode.match(/name="([^"]+)"/g);
-  if (toolMatches) {
-    console.error('✅ Found tools in Python code:', toolMatches.map(m => m.match(/"([^"]+)"/)[1]));
-  } else {
-    console.error('❌ No tools found in Python code');
-  }
-
+  mcpParser = new PythonMCPParser(pythonCode);
+  console.error('✅ Parser initialized successfully');
 } catch (error) {
-  console.error('❌ Could not read server.py:', error.message);
+  console.error('❌ Could not read or parse server.py:', error.message);
+  process.exit(1);
 }
-
-// Extract API base URL from Python code
-function extractBaseUrl(code) {
-  const urlMatch = code.match(/API_BASE_URL = ["']([^"']+)["']/);
-  return urlMatch ? urlMatch[1] : 'https://jsonplaceholder.typicode.com';
-}
-
-const API_BASE_URL = extractBaseUrl(pythonCode);
-console.error('✅ API Base URL:', API_BASE_URL);
 
 // HTTP request helper function
 function makeApiRequest(url, options = {}) {
@@ -194,236 +408,31 @@ function makeApiRequest(url, options = {}) {
   });
 }
 
-// FIXED: Extract tool handler logic from Python code
-function extractToolHandler(pythonCode, toolName) {
-  console.error('[EXTRACT] Looking for tool handler:', toolName);
+// Dynamic tool execution using the parser
+async function executeApiToolDynamic(toolName, args) {
+  console.error('[TOOL] Executing tool dynamically:', toolName, 'with args:', args);
 
   try {
-    // Simplified extraction - just look for the tool name in an elif statement
-    const toolPattern = 'elif name == "' + toolName + '":';
-    const startIndex = pythonCode.indexOf(toolPattern);
+    const tool = mcpParser.getToolByName(toolName);
+    const handler = mcpParser.getHandlerByName(toolName);
 
-    if (startIndex === -1) {
-      console.error('[EXTRACT] Tool pattern not found:', toolPattern);
-      return null;
+    if (!tool) {
+      throw new Error(\`Tool '\${toolName}' not found in parsed definitions\`);
     }
 
-    // Find the end of this elif block
-    const afterStart = pythonCode.substring(startIndex);
-    const endPatterns = ['elif name ==', 'else:', 'return [TextContent'];
-    let endIndex = afterStart.length;
-
-    for (const pattern of endPatterns) {
-      const foundIndex = afterStart.indexOf(pattern, 50);
-      if (foundIndex !== -1 && foundIndex < endIndex) {
-        endIndex = foundIndex;
-      }
+    if (!handler) {
+      console.error('[TOOL] No specific handler found, using inference for:', toolName);
+      const inferredHandler = inferHandlerFromTool(tool, toolName);
+      const result = await executeToolHandler(inferredHandler, args);
+      return {
+        type: 'text',
+        text: JSON.stringify(result.data, null, 2)
+      };
     }
 
-    const handlerCode = afterStart.substring(0, endIndex);
-    console.error('[EXTRACT] Found handler code for', toolName);
-
-    // FIXED: Use string methods instead of problematic regex
-    let method = 'get';
-    let path = '/';
-    let hasParams = false;
-    let hasBody = false;
-
-    // Look for method calls in the handler code
-    if (handlerCode.includes('client.get(')) {
-      method = 'get';
-    } else if (handlerCode.includes('client.post(')) {
-      method = 'post';
-      hasBody = true;
-    } else if (handlerCode.includes('client.put(')) {
-      method = 'put';
-      hasBody = true;
-    } else if (handlerCode.includes('client.delete(')) {
-      method = 'delete';
-    }
-
-    // Extract path using string operations
-    const clientCallIndex = handlerCode.indexOf('client.' + method + '(');
-    if (clientCallIndex !== -1) {
-      const afterCall = handlerCode.substring(clientCallIndex);
-      const firstQuote = afterCall.indexOf('"');
-      const secondQuote = afterCall.indexOf('"', firstQuote + 1);
-      if (firstQuote !== -1 && secondQuote !== -1) {
-        path = afterCall.substring(firstQuote + 1, secondQuote);
-      }
-    }
-
-    // Check for params and payload
-    hasParams = handlerCode.includes('params=params');
-    hasBody = handlerCode.includes('json=payload') || hasBody;
-
-    console.error('[EXTRACT] Extracted handler:', { method, path, hasParams, hasBody, toolName });
-
-    return {
-      method: method,
-      path: path,
-      hasParams: hasParams,
-      hasBody: hasBody,
-      toolName: toolName
-    };
-
-  } catch (error) {
-    console.error('[EXTRACT] Error during extraction:', error.message);
-    return null;
-  }
-}
-
-// Fallback: infer tool handler from tool name patterns
-function inferToolHandler(toolName) {
-  console.error('[INFER] Inferring handler for:', toolName);
-
-  // Common patterns for different tool types
-  if (toolName.startsWith('get_all_')) {
-    const resource = toolName.replace('get_all_', '');
-    return {
-      method: 'get',
-      path: '/' + resource,
-      hasParams: true,
-      hasBody: false,
-      toolName: toolName
-    };
-  }
-
-  if (toolName.includes('_by_id')) {
-    const resource = toolName.split('_by_id')[0].replace('get_', '');
-    return {
-      method: 'get',
-      path: '/' + resource + '/{id}',
-      hasParams: false,
-      hasBody: false,
-      toolName: toolName
-    };
-  }
-
-  if (toolName.startsWith('create_')) {
-    const resource = toolName.replace('create_', '');
-    return {
-      method: 'post',
-      path: '/' + resource,
-      hasParams: false,
-      hasBody: true,
-      toolName: toolName
-    };
-  }
-
-  if (toolName.startsWith('update_')) {
-    const resource = toolName.replace('update_', '');
-    return {
-      method: 'put',
-      path: '/' + resource + '/{id}',
-      hasParams: false,
-      hasBody: true,
-      toolName: toolName
-    };
-  }
-
-  if (toolName.startsWith('delete_')) {
-    const resource = toolName.replace('delete_', '');
-    return {
-      method: 'delete',
-      path: '/' + resource + '/{id}',
-      hasParams: false,
-      hasBody: false,
-      toolName: toolName
-    };
-  }
-
-  // Default fallback
-  return {
-    method: 'get',
-    path: '/',
-    hasParams: true,
-    hasBody: false,
-    toolName: toolName
-  };
-}
-
-// Execute a tool handler based on extracted information
-async function executeToolHandler(handler, args) {
-  console.error('[EXECUTE] Handler:', handler);
-  console.error('[EXECUTE] Args:', args);
-
-  try {
-    if (!handler || !handler.path || !handler.method) {
-      throw new Error('Invalid handler: missing path or method');
-    }
-
-    let url = API_BASE_URL + handler.path;
-    let options = {
-      method: handler.method.toUpperCase()
-    };
-
-    // Replace path parameters (like {id})
-    if (args && typeof args === 'object') {
-      for (const [key, value] of Object.entries(args)) {
-        const placeholder = '{' + key + '}';
-        if (url.includes(placeholder)) {
-          url = url.replace(placeholder, encodeURIComponent(value));
-        }
-      }
-    }
-
-    // Add query parameters if needed
-    if (handler.hasParams && args && typeof args === 'object') {
-      const queryParams = new URLSearchParams();
-      for (const [key, value] of Object.entries(args)) {
-        // Don't add path parameters as query parameters
-        if (!handler.path.includes('{' + key + '}') && value !== undefined && value !== null) {
-          queryParams.append(key, value.toString());
-        }
-      }
-      if (queryParams.toString()) {
-        url += '?' + queryParams.toString();
-      }
-    }
-
-    // Add request body if needed
-    if (handler.hasBody && (options.method === 'POST' || options.method === 'PUT' || options.method === 'PATCH') && args && typeof args === 'object') {
-      const body = {};
-      for (const [key, value] of Object.entries(args)) {
-        // Don't add path parameters to body
-        if (!handler.path.includes('{' + key + '}') && value !== undefined && value !== null) {
-          body[key] = value;
-        }
-      }
-      options.body = body;
-    }
-
-    console.error('[EXECUTE] Final URL:', url);
-    console.error('[EXECUTE] Final options:', JSON.stringify(options, null, 2));
-
-    return await makeApiRequest(url, options);
-
-  } catch (error) {
-    console.error('[EXECUTE] Error in executeToolHandler:', error.message);
-    throw error;
-  }
-}
-
-// Dynamic tool execution that works with any API
-async function executeApiTool(toolName, args) {
-  console.error('[TOOL] Executing:', toolName, 'with args:', args);
-
-  try {
-    // Try to extract tool handler logic from Python code
-    let toolHandler = extractToolHandler(pythonCode, toolName);
-
-    // If extraction fails, use inference as fallback
-    if (!toolHandler) {
-      console.error('[TOOL] Extraction failed, using inference fallback');
-      toolHandler = inferToolHandler(toolName);
-    }
-
-    console.error('[TOOL] Using handler:', toolHandler);
-
-    // Execute the handler logic
-    const result = await executeToolHandler(toolHandler, args);
-    console.error('[TOOL] API call successful');
+    console.error('[TOOL] Using parsed handler:', handler);
+    const result = await executeToolHandler(handler, args);
+    console.error('[TOOL] Dynamic execution successful for', toolName);
 
     return {
       type: 'text',
@@ -431,110 +440,138 @@ async function executeApiTool(toolName, args) {
     };
 
   } catch (error) {
-    console.error('[TOOL] API call failed:', error.message);
+    console.error('[TOOL] Dynamic execution failed for', toolName, ':', error.message);
 
-    // Ultimate fallback: return a simple response
     return {
       type: 'text',
-      text: 'Tool executed: ' + toolName + ' with arguments: ' + JSON.stringify(args) + '. Error: ' + error.message
+      text: JSON.stringify({
+        error: error.message,
+        tool: toolName,
+        args: args,
+        timestamp: new Date().toISOString()
+      }, null, 2)
     };
   }
 }
 
-// Enhanced tool extraction from generated code
-function getToolsFromCode(code) {
-  const tools = [];
-
-  // Look for generated tool definitions in the Python code
-  const toolMatches = code.match(/name="([^"]+)".*?description="([^"]+)"/g) || [];
-
-  toolMatches.forEach(match => {
-    const nameMatch = match.match(/name="([^"]+)"/);
-    const descMatch = match.match(/description="([^"]+)"/);
-
-    if (nameMatch && descMatch) {
-      const toolName = nameMatch[1];
-      let inputSchema = {
-        type: 'object',
-        properties: {}
-      };
-
-      // Enhanced schema based on tool name
-      if (toolName.includes('by_id') || toolName.includes('delete') || toolName.includes('update')) {
-        inputSchema.properties.id = { type: 'integer', description: 'ID parameter', minimum: 1 };
-        inputSchema.required = ['id'];
-      }
-
-      if (toolName.includes('create_post') || toolName.includes('update_post')) {
-        inputSchema.properties = {
-          ...inputSchema.properties,
-          title: { type: 'string', description: 'Post title' },
-          body: { type: 'string', description: 'Post content' },
-          userId: { type: 'integer', description: 'User ID', minimum: 1 }
-        };
-        if (toolName.includes('create')) {
-          inputSchema.required = ['title', 'body', 'userId'];
-        }
-      }
-
-      if (toolName.includes('create_comment')) {
-        inputSchema.properties = {
-          ...inputSchema.properties,
-          postId: { type: 'integer', description: 'Post ID', minimum: 1 },
-          name: { type: 'string', description: 'Commenter name' },
-          email: { type: 'string', description: 'Commenter email' },
-          body: { type: 'string', description: 'Comment content' }
-        };
-        inputSchema.required = ['postId', 'name', 'email', 'body'];
-      }
-
-      if (toolName.includes('get_all')) {
-        inputSchema.properties._limit = { type: 'string', description: 'Limit number of results' };
-      }
-
-      tools.push({
-        name: toolName,
-        description: descMatch[1],
-        inputSchema
-      });
+// Infer handler from tool name when parsing fails
+function inferHandlerFromTool(tool, toolName) {
+  console.error('[INFER] Inferring handler for tool:', toolName);
+  
+  const method = tool.name.includes('create') ? 'POST' :
+                tool.name.includes('update') ? 'PUT' :
+                tool.name.includes('delete') ? 'DELETE' : 'GET';
+  
+  let path = '/';
+  let pathParams = [];
+  
+  if (tool.name.includes('post')) {
+    if (tool.name.includes('by_id') || tool.name.includes('delete') || tool.name.includes('update')) {
+      path = '/posts/{id}';
+      pathParams = [{ varName: 'id', argName: 'id' }];
+    } else if (tool.name.includes('comments')) {
+      path = '/posts/{id}/comments';
+      pathParams = [{ varName: 'id', argName: 'id' }];
+    } else {
+      path = '/posts';
     }
-  });
-
-  // Smart fallback tools if none found
-  if (tools.length === 0) {
-    console.error('[FALLBACK] No tools extracted, creating generic fallback tools');
-
-    tools.push(
-      {
-        name: 'get_all_posts',
-        description: 'Get all posts from the API',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            _limit: { type: 'string', description: 'Limit number of results' }
-          }
-        }
-      },
-      {
-        name: 'get_post_by_id',
-        description: 'Get a specific post by ID',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            id: { type: 'integer', description: 'Post ID', minimum: 1 }
-          },
-          required: ['id']
-        }
-      }
-    );
-
-    console.error('[FALLBACK] Created fallback tools:', tools.map(t => t.name));
+  } else if (tool.name.includes('user')) {
+    if (tool.name.includes('by_id')) {
+      path = '/users/{id}';
+      pathParams = [{ varName: 'id', argName: 'id' }];
+    } else if (tool.name.includes('posts')) {
+      path = '/users/{id}/posts';
+      pathParams = [{ varName: 'id', argName: 'id' }];
+    } else {
+      path = '/users';
+    }
+  } else if (tool.name.includes('comment')) {
+    path = '/comments';
+  } else if (tool.name.includes('album')) {
+    path = '/albums';
+  } else if (tool.name.includes('photo')) {
+    path = '/photos';
   }
-
-  return tools;
+  
+  return {
+    method: method,
+    path: path,
+    hasParams: method === 'GET',
+    hasBody: ['POST', 'PUT', 'PATCH'].includes(method),
+    pathParams: pathParams,
+    toolName: toolName
+  };
 }
 
-const availableTools = getToolsFromCode(pythonCode);
+// Execute tool handler
+async function executeToolHandler(handler, args) {
+  console.error('[EXECUTE] Dynamic handler execution:', handler);
+  console.error('[EXECUTE] Args:', args);
+
+  try {
+    if (!handler || !handler.path || !handler.method) {
+      throw new Error('Invalid handler: missing path or method');
+    }
+
+    const apiBaseUrl = mcpParser.getApiBaseUrl();
+    let url = apiBaseUrl + handler.path;
+    let options = {
+      method: handler.method.toUpperCase()
+    };
+
+    // Replace path parameters
+    if (handler.pathParams && handler.pathParams.length > 0 && args && typeof args === 'object') {
+      handler.pathParams.forEach(({ varName, argName }) => {
+        if (args[argName] !== undefined) {
+          const placeholder = \`{\${argName}}\`;
+          if (url.includes(placeholder)) {
+            url = url.replace(placeholder, encodeURIComponent(args[argName]));
+            console.error('[EXECUTE] Replaced', placeholder, 'with', args[argName]);
+          }
+        }
+      });
+    }
+
+    // Add query parameters
+    if (handler.hasParams && args && typeof args === 'object') {
+      const queryParams = new URLSearchParams();
+      for (const [key, value] of Object.entries(args)) {
+        const isPathParam = handler.pathParams?.some(p => p.argName === key);
+        if (!isPathParam && value !== undefined && value !== null) {
+          queryParams.append(key, value.toString());
+        }
+      }
+      if (queryParams.toString()) {
+        url += '?' + queryParams.toString();
+        console.error('[EXECUTE] Added query params:', queryParams.toString());
+      }
+    }
+
+    // Add request body
+    if (handler.hasBody && (options.method === 'POST' || options.method === 'PUT' || options.method === 'PATCH') && args && typeof args === 'object') {
+      const body = {};
+      for (const [key, value] of Object.entries(args)) {
+        const isPathParam = handler.pathParams?.some(p => p.argName === key);
+        if (!isPathParam && value !== undefined && value !== null) {
+          body[key] = value;
+        }
+      }
+      options.body = body;
+      console.error('[EXECUTE] Added request body:', body);
+    }
+
+    console.error('[EXECUTE] Final URL:', url);
+    return await makeApiRequest(url, options);
+
+  } catch (error) {
+    console.error('[EXECUTE] Error in dynamic executeToolHandler:', error.message);
+    throw error;
+  }
+}
+
+// Get all tools and resources from the parser
+const availableTools = mcpParser.getAllTools();
+const availableResources = mcpParser.getAllResources();
 
 // Set up readline interface for stdin/stdout
 const rl = readline.createInterface({
@@ -543,9 +580,11 @@ const rl = readline.createInterface({
   terminal: false
 });
 
-console.error('✅ Real API MCP Server starting...');
-console.error('✅ API Base URL:', API_BASE_URL);
+console.error('✅ Dynamic MCP Server starting...');
+console.error('✅ API Base URL:', mcpParser.getApiBaseUrl());
+console.error('✅ Server Name:', mcpParser.getServerName());
 console.error('✅ Available tools:', availableTools.map(t => t.name).join(', '));
+console.error('✅ Available resources:', availableResources.map(r => r.name).join(', '));
 
 // Handle MCP JSON-RPC requests
 rl.on('line', async (input) => {
@@ -567,7 +606,7 @@ rl.on('line', async (input) => {
               resources: {}
             },
             serverInfo: {
-              name: 'Real API MCP Server',
+              name: 'Dynamic MCP Server',
               version: '1.0.0'
             }
           }
@@ -591,7 +630,7 @@ rl.on('line', async (input) => {
         console.error('[MCP] Executing tool:', toolName, 'with args:', toolArgs);
 
         try {
-          const apiResult = await executeApiTool(toolName, toolArgs);
+          const apiResult = await executeApiToolDynamic(toolName, toolArgs);
           response = {
             jsonrpc: '2.0',
             id: request.id,
@@ -617,14 +656,7 @@ rl.on('line', async (input) => {
           jsonrpc: '2.0',
           id: request.id,
           result: {
-            resources: [
-              {
-                uri: 'posts://all',
-                name: 'All Posts',
-                description: 'All posts from the API',
-                mimeType: 'application/json'
-              }
-            ]
+            resources: availableResources
           }
         };
         break;
@@ -634,8 +666,29 @@ rl.on('line', async (input) => {
         console.error('[MCP] Reading resource:', uri);
 
         try {
-          let resourceUrl = API_BASE_URL + '/posts';
+          // Find the resource definition
+          const resource = availableResources.find(r => r.uri === uri);
+          if (!resource) {
+            throw new Error(\`Resource '\${uri}' not found\`);
+          }
+
+          // Infer the API endpoint from the resource URI
+          let resourcePath = '/';
+          if (uri.includes('posts://')) {
+            resourcePath = '/posts';
+          } else if (uri.includes('users://')) {
+            resourcePath = '/users';
+          } else if (uri.includes('comments://')) {
+            resourcePath = '/comments';
+          } else if (uri.includes('albums://')) {
+            resourcePath = '/albums';
+          } else if (uri.includes('photos://')) {
+            resourcePath = '/photos';
+          }
+
+          const resourceUrl = mcpParser.getApiBaseUrl() + resourcePath;
           const resourceResult = await makeApiRequest(resourceUrl);
+          
           response = {
             jsonrpc: '2.0',
             id: request.id,
@@ -691,26 +744,25 @@ rl.on('line', async (input) => {
   }
 });
 
-console.error('🚀 Real API MCP Server ready for requests');
-`
+console.error('🚀 Dynamic MCP Server ready for requests');`
         }
       };
 
       files['package.json'] = {
         file: {
           contents: JSON.stringify({
-            name: 'mcp-python-server-simulation',
+            name: 'mcp-python-server-dynamic',
             version: '1.0.0',
             scripts: {
               start: 'node server.js',
-              install: 'echo "Python simulation - no dependencies to install"'
+              install: 'echo "Dynamic Python MCP server - no dependencies to install"'
             }
           }, null, 2)
         }
       };
 
     } else {
-      // TypeScript/Node.js MCP Server setup
+      // TypeScript/Node.js MCP Server setup (unchanged)
       files['server.js'] = {
         file: {
           contents: code
@@ -813,6 +865,13 @@ console.error('🚀 Real API MCP Server ready for requests');
       // Wait a bit for server to initialize and look for "READY" signal
       await this.waitForServerReady();
       
+      // Expose server process globally for MCP client access
+      (window as any).webContainerInstance = this.webcontainer;
+      (window as any).mcpServerProcess = this.serverProcess;
+      
+      // ADD THIS LINE: Expose the WebContainerManager instance
+      (window as any).webContainerManagerInstance = this;
+      
       console.log(`${language} MCP server started successfully`);
       return this.serverUrl;
       
@@ -842,100 +901,105 @@ console.error('🚀 Real API MCP Server ready for requests');
   }
 
   private setupOutputReader(reader: ReadableStreamDefaultReader): void {
-    const readLoop = async () => {
-      try {
-        const { value, done } = await reader.read();
-        if (done) {
-          console.log('Server process ended');
-          return;
-        }
+  let buffer = ''; // Buffer to accumulate partial JSON
 
-        // Handle different value types from WebContainer streams
-        let output: string;
-        if (typeof value === 'string') {
-          output = value;
-        } else if (value instanceof Uint8Array) {
-          output = new TextDecoder().decode(value);
-        } else if (value instanceof ArrayBuffer) {
-          output = new TextDecoder().decode(new Uint8Array(value));
-        } else if (value && typeof value.toString === 'function') {
-          output = value.toString();
-        } else {
-          console.warn('Unknown value type from WebContainer stream:', typeof value, value);
-          output = String(value);
+  const readLoop = async () => {
+    try {
+      const { value, done } = await reader.read();
+      if (done) {
+        console.log('Server process ended');
+        return;
+      }
+
+      // Handle different value types from WebContainer streams
+      let output: string;
+      if (typeof value === 'string') {
+        output = value;
+      } else if (value instanceof Uint8Array) {
+        output = new TextDecoder().decode(value);
+      } else if (value instanceof ArrayBuffer) {
+        output = new TextDecoder().decode(new Uint8Array(value));
+      } else if (value && typeof value.toString === 'function') {
+        output = value.toString();
+      } else {
+        console.warn('Unknown value type from WebContainer stream:', typeof value, value);
+        output = String(value);
+      }
+      
+      // Add to buffer
+      buffer += output;
+      
+      // Process complete lines
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || ''; // Keep the last incomplete line in buffer
+      
+      for (const line of lines) {
+        const trimmed = line.trim();
+        
+        if (!trimmed) continue;
+        
+        // Skip debug/log lines
+        if (trimmed.startsWith('[MCP]') || trimmed.startsWith('[DEBUG]') || 
+            trimmed.startsWith('[ERROR]') || trimmed.startsWith('[INFO]') ||
+            trimmed.startsWith('[HTTP]') || trimmed.startsWith('[TOOL]') ||
+            trimmed.startsWith('[EXTRACT]') || trimmed.startsWith('[EXECUTE]') ||
+            trimmed.startsWith('[INFER]') || trimmed.startsWith('[FALLBACK]')) {
+          console.log('📝 Server output:', trimmed);
+          continue;
         }
         
-        console.log('MCP Server output:', output);
-
-        // Parse potential JSON responses - look for complete JSON objects
-        const lines = output.split('\n');
-        for (const line of lines) {
-          const trimmed = line.trim();
-          
-          // Skip debug/log lines that start with brackets
-          if (trimmed.startsWith('[DEBUG]') || trimmed.startsWith('[ERROR]') || trimmed.startsWith('[INFO]')) {
-            console.log('Server log:', trimmed);
-            continue;
-          }
-          
-          // Look for JSON responses (should be complete JSON objects)
-          if (trimmed.startsWith('{"jsonrpc"') && trimmed.includes('"id"')) {
-            try {
-              const response = JSON.parse(trimmed);
-              console.log('✅ Parsed MCP response:', response);
-              
-              // Check if this is actually a response (has result or error) vs echoed request (has method)
-              if (response.method) {
-                console.log('📤 This is an echoed request, not a response');
-                continue;
-              }
-              
-              if (response.id && this.pendingRequests.has(response.id)) {
-                console.log(`✅ Found matching pending request for ID: ${response.id}`);
-                const pending = this.pendingRequests.get(response.id)!;
-                clearTimeout(pending.timeout);
-                this.pendingRequests.delete(response.id);
-                console.log(`🗑️ Removed pending request ID: ${response.id}, remaining: ${this.pendingRequests.size}`);
-                pending.resolve(response);
-              } else {
-                console.log(`❌ No pending request found for ID: ${response.id}`);
-                console.log('❌ Current pending requests:', Array.from(this.pendingRequests.keys()));
-                console.log('❌ Response type:', response.result ? 'result' : response.error ? 'error' : 'unknown');
-              }
-            } catch (parseError) {
-              console.log('❌ Failed to parse JSON response:', trimmed, parseError);
+        // Try to parse JSON responses
+        if (trimmed.startsWith('{"jsonrpc"') || (trimmed.startsWith('{') && trimmed.includes('"jsonrpc"'))) {
+          try {
+            const response = JSON.parse(trimmed);
+            console.log('✅ Parsed MCP response:', response);
+            
+            // Check if this is a request echo or actual response
+            if (response.method) {
+              console.log('📤 This is an echoed request, not a response');
+              continue;
             }
-          } else if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-            // Try parsing other JSON that might be responses
-            try {
-              const response = JSON.parse(trimmed);
-              if (response.jsonrpc && response.id) {
-                console.log('✅ Found alternate JSON response:', response);
-                if (this.pendingRequests.has(response.id)) {
-                  const pending = this.pendingRequests.get(response.id)!;
-                  clearTimeout(pending.timeout);
-                  this.pendingRequests.delete(response.id);
-                  pending.resolve(response);
-                }
-              }
-            } catch (parseError) {
-              // Not a JSON response, just log output
-              console.log('📝 Server output:', trimmed);
+            
+            // Process the response if we have a matching pending request
+            if (response.id && this.pendingRequests.has(response.id)) {
+              console.log(`✅ Found matching pending request for ID: ${response.id}`);
+              const pending = this.pendingRequests.get(response.id)!;
+              clearTimeout(pending.timeout);
+              this.pendingRequests.delete(response.id);
+              console.log(`🗑️ Removed pending request ID: ${response.id}, remaining: ${this.pendingRequests.size}`);
+              
+              // Resolve with the response
+              pending.resolve(response);
+            } else if (response.id) {
+              console.log(`❌ No pending request found for ID: ${response.id}`);
+              console.log('❌ Current pending requests:', Array.from(this.pendingRequests.keys()));
             }
-          } else if (trimmed) {
-            console.log('📝 Server output:', trimmed);
+          } catch (parseError) {
+            console.log('❌ Failed to parse JSON response:', parseError.message);
+            console.log('❌ Raw line:', trimmed);
           }
+        } else {
+          // Non-JSON output (logs, etc.)
+          console.log('📝 Server output:', trimmed);
         }
-
-        // Continue reading
-        readLoop();
-      } catch (error) {
-        console.error('Error reading server output:', error);
       }
-    };
 
-    readLoop();
-  }
+      // Continue reading
+      readLoop();
+    } catch (error) {
+      console.error('Error reading server output:', error);
+      
+      // Reject all pending requests on read error
+      for (const [id, pending] of this.pendingRequests.entries()) {
+        clearTimeout(pending.timeout);
+        pending.reject(new Error('Server output stream error'));
+      }
+      this.pendingRequests.clear();
+    }
+  };
+
+  readLoop();
+}
 
   async stopServer() {
     if (this.serverProcess) {
@@ -962,6 +1026,10 @@ console.error('🚀 Real API MCP Server ready for requests');
       }
       this.serverProcess = null;
       this.serverUrl = null;
+      
+      // Clean up global references
+      delete (window as any).webContainerInstance;
+      delete (window as any).mcpServerProcess;
     }
   }
 
@@ -1036,13 +1104,15 @@ console.error('🚀 Real API MCP Server ready for requests');
       throw new Error('MCP server not running or not properly initialized');
     }
 
-    // Create a test MCP request
-    const mcpRequest = {
-      jsonrpc: '2.0',
-      id: Date.now(),
-      method: method,
-      params: params
-    };
+    // Generate a unique request ID using timestamp + random number
+  const requestId = Date.now() + Math.floor(Math.random() * 1000);
+  
+  const mcpRequest = {
+    jsonrpc: '2.0',
+    id: requestId,
+    method: method,
+    params: params
+  };
 
     console.log('Sending MCP request:', mcpRequest);
 

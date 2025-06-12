@@ -18,7 +18,13 @@ import {
   Send,
   Eye,
   BarChart3,
-  Loader2
+  Loader2,
+  ChevronDown,
+  ChevronUp,
+  Maximize2,
+  Minimize2,
+  MessageSquare,
+  Bot
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Card, CardContent, CardHeader } from '../ui/Card';
@@ -27,6 +33,7 @@ import { WebContainerManager } from '../../utils/webcontainer';
 import { MCPClientSimulator } from './MCPClientSimulator';
 import { PerformanceMetrics } from './PerformanceMetrics';
 import { DebugConsole } from './DebugConsole';
+import { LLMChatInterface } from './LLMChatInterface';
 
 interface TestingEnvironmentProps {
   generatedCode: string;
@@ -45,7 +52,7 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
 }) => {
   const [isRunning, setIsRunning] = useState(false);
   const [serverStatus, setServerStatus] = useState<'stopped' | 'starting' | 'running' | 'error'>('stopped');
-  const [activeTab, setActiveTab] = useState<'simulator' | 'debug' | 'metrics' | 'terminal'>('simulator');
+  const [activeTab, setActiveTab] = useState<'chat' | 'simulator' | 'debug' | 'metrics' | 'terminal'>('chat');
   const [webContainer, setWebContainer] = useState<WebContainerManager | null>(null);
   const [serverUrl, setServerUrl] = useState<string>('');
   const [testResults, setTestResults] = useState<any[]>([]);
@@ -53,6 +60,11 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
   const [debugLogs, setDebugLogs] = useState<any[]>([]);
   const [initializationProgress, setInitializationProgress] = useState<string>('');
   const [terminalOutput, setTerminalOutput] = useState<string[]>([]);
+  const [selectedTool, setSelectedTool] = useState<any>(null);
+  const [toolParameters, setToolParameters] = useState<Record<string, any>>({});
+  const [lastTestResult, setLastTestResult] = useState<any>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [responseExpanded, setResponseExpanded] = useState(false);
 
   const terminalRef = useRef<HTMLDivElement>(null);
   const performanceInterval = useRef<NodeJS.Timeout | null>(null);
@@ -69,11 +81,13 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
         addDebugLog('info', 'Starting WebContainer initialization');
         
         const container = WebContainerManager.getInstance();
+        
         await container.initialize();
         
         if (!isMounted) return;
         
         setWebContainer(container);
+        (window as any).webContainerManagerInstance = container;
         setInitializationProgress('WebContainer ready');
         addDebugLog('info', 'WebContainer initialized successfully');
         addTerminalOutput('WebContainer initialized successfully');
@@ -214,118 +228,93 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
     }, 2000);
   };
 
+  const handleParameterChange = (paramName: string, value: any) => {
+    setToolParameters(prev => ({
+      ...prev,
+      [paramName]: value
+    }));
+  };
+
   const handleToolTest = async (toolName: string, parameters: any) => {
-  if (!webContainer || serverStatus !== 'running') {
-    addDebugLog('error', 'Cannot test tool: server not running');
-    return;
-  }
-
-  const startTime = Date.now();
-  addDebugLog('info', `Testing MCP tool: ${toolName}`, parameters);
-  addTerminalOutput(`Testing tool: ${toolName}`);
-
-  try {
-    // Add comprehensive debugging
-    console.log('🚀 About to send MCP request...');
-    console.log('🔧 Tool name:', toolName);
-    console.log('🔧 Parameters:', parameters);
-    console.log('🔧 WebContainer instance:', webContainer);
-    console.log('🔧 Server status:', serverStatus);
-
-    // Send actual MCP request
-    const result = await webContainer.sendMCPRequest('tools/call', {
-      name: toolName,
-      arguments: parameters
-    });
-
-    // Debug the response
-    console.log('📦 Raw result from sendMCPRequest:', result);
-    console.log('📦 Result type:', typeof result);
-    console.log('📦 Result keys:', Object.keys(result || {}));
-    console.log('📦 Full result structure:', JSON.stringify(result, null, 2));
-
-    // Check if result has the expected MCP structure
-    if (result && result.result && result.result.content) {
-      console.log('✅ Result has proper MCP structure');
-      console.log('📄 Content:', result.result.content);
-    } else {
-      console.log('⚠️ Result does not have expected MCP structure');
-      console.log('📄 Looking for result.result.content, but got:', {
-        hasResult: !!result,
-        hasResultProperty: !!(result && result.result),
-        hasContent: !!(result && result.result && result.result.content)
-      });
+    if (!webContainer || serverStatus !== 'running') {
+      addDebugLog('error', 'Cannot test tool: server not running');
+      return;
     }
 
-    const endTime = Date.now();
-    const responseTime = endTime - startTime;
+    const startTime = Date.now();
+    addDebugLog('info', `Testing MCP tool: ${toolName}`, parameters);
+    addTerminalOutput(`Testing tool: ${toolName}`);
 
-    const testResult = {
-      id: Date.now(),
-      toolName,
-      parameters,
-      result,
-      responseTime,
-      status: 'success',
-      timestamp: new Date().toISOString()
-    };
+    try {
+      console.log('🚀 About to send MCP request...');
+      console.log('🔧 Tool name:', toolName);
+      console.log('🔧 Parameters:', parameters);
 
-    console.log('📋 Created test result object:', testResult);
-    console.log('📋 Test result ID:', testResult.id);
-    console.log('📋 Test result status:', testResult.status);
+      // Send actual MCP request
+      const result = await webContainer.sendMCPRequest('tools/call', {
+        name: toolName,
+        arguments: parameters
+      });
 
-    // Debug state update
-    setTestResults(prev => {
-      console.log('📊 Previous test results:', prev);
-      console.log('📊 Previous results length:', prev.length);
+      console.log('📦 Raw result from sendMCPRequest:', result);
 
-      const newResults = [...prev, testResult];
+      const endTime = Date.now();
+      const responseTime = endTime - startTime;
 
-      console.log('📊 New test results array:', newResults);
-      console.log('📊 New results length:', newResults.length);
-      console.log('📊 Last result in array:', newResults[newResults.length - 1]);
+      const testResult = {
+        id: Date.now(),
+        toolName,
+        parameters,
+        result,
+        responseTime,
+        status: 'success',
+        timestamp: new Date().toISOString()
+      };
 
-      return newResults;
-    });
+      setTestResults(prev => [...prev, testResult]);
+      setLastTestResult(testResult);
 
-    addDebugLog('info', `MCP tool test completed: ${toolName}`, { responseTime, result });
-    addTerminalOutput(`Tool test completed: ${toolName} (${responseTime}ms)`);
+      addDebugLog('info', `MCP tool test completed: ${toolName}`, { responseTime, result });
+      addTerminalOutput(`Tool test completed: ${toolName} (${responseTime}ms)`);
 
-    console.log('✅ handleToolTest completed successfully');
+    } catch (error) {
+      console.log('❌ Error in handleToolTest:', error);
 
-  } catch (error) {
-    console.log('❌ Error in handleToolTest:', error);
-    console.log('❌ Error message:', error.message);
-    console.log('❌ Error stack:', error.stack);
+      const endTime = Date.now();
+      const responseTime = endTime - startTime;
 
-    const endTime = Date.now();
-    const responseTime = endTime - startTime;
+      const testResult = {
+        id: Date.now(),
+        toolName,
+        parameters,
+        error: error.message,
+        responseTime,
+        status: 'error',
+        timestamp: new Date().toISOString()
+      };
 
-    const testResult = {
-      id: Date.now(),
-      toolName,
-      parameters,
-      error: error.message,
-      responseTime,
-      status: 'error',
-      timestamp: new Date().toISOString()
-    };
+      setTestResults(prev => [...prev, testResult]);
+      setLastTestResult(testResult);
 
-    console.log('📋 Created error test result:', testResult);
+      addDebugLog('error', `MCP tool test failed: ${toolName}`, error);
+      addTerminalOutput(`Tool test failed: ${toolName} - ${error.message}`);
+    }
+  };
 
-    setTestResults(prev => {
-      console.log('📊 Adding error result to previous results:', prev);
-      const newResults = [...prev, testResult];
-      console.log('📊 New results with error:', newResults);
-      return newResults;
-    });
+  const handleMCPCall = async (method: string, params: any) => {
+    if (!webContainer || serverStatus !== 'running') {
+      throw new Error('MCP server not running');
+    }
 
-    addDebugLog('error', `MCP tool test failed: ${toolName}`, error);
-    addTerminalOutput(`Tool test failed: ${toolName} - ${error.message}`);
-
-    console.log('❌ handleToolTest completed with error');
-  }
-};
+    try {
+      const result = await webContainer.sendMCPRequest(method, params);
+      addDebugLog('info', `LLM MCP call: ${method}`, { params, result });
+      return result;
+    } catch (error) {
+      addDebugLog('error', `LLM MCP call failed: ${method}`, error);
+      throw error;
+    }
+  };
 
   const handleInitializeMCP = async () => {
     if (!webContainer || serverStatus !== 'running') return;
@@ -353,61 +342,118 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
     }
   };
 
+  const renderParameterInput = (param: any) => {
+    const value = toolParameters[param.name] || '';
+    
+    switch (param.type) {
+      case 'string':
+        return (
+          <Input
+            key={param.name}
+            label={param.name}
+            placeholder={param.description || `Enter ${param.name}`}
+            value={value}
+            onChange={(e) => handleParameterChange(param.name, e.target.value)}
+            className="text-sm"
+          />
+        );
+      case 'number':
+        return (
+          <Input
+            key={param.name}
+            type="number"
+            label={param.name}
+            placeholder={param.description || `Enter ${param.name}`}
+            value={value}
+            onChange={(e) => handleParameterChange(param.name, parseFloat(e.target.value))}
+            className="text-sm"
+          />
+        );
+      case 'boolean':
+        return (
+          <div key={param.name} className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              id={param.name}
+              checked={value || false}
+              onChange={(e) => handleParameterChange(param.name, e.target.checked)}
+              className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <label htmlFor={param.name} className="text-sm font-medium text-gray-700">
+              {param.name}
+            </label>
+          </div>
+        );
+      default:
+        return (
+          <Input
+            key={param.name}
+            label={param.name}
+            placeholder={param.description || `Enter ${param.name}`}
+            value={value}
+            onChange={(e) => handleParameterChange(param.name, e.target.value)}
+            className="text-sm"
+          />
+        );
+    }
+  };
+
   const tabs = [
-    { id: 'simulator', label: 'MCP Simulator', icon: Monitor },
-    { id: 'debug', label: 'Debug Console', icon: Terminal },
-    { id: 'metrics', label: 'Performance', icon: BarChart3 },
+    { id: 'chat', label: 'LLM Chat', icon: MessageSquare },
+    { id: 'simulator', label: 'Tools', icon: Zap },
+    { id: 'debug', label: 'Debug', icon: Terminal },
+    { id: 'metrics', label: 'Metrics', icon: BarChart3 },
     { id: 'terminal', label: 'Terminal', icon: Code }
   ];
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
+      {/* Compact Header */}
+      <div className="bg-white border-b border-gray-200 px-4 py-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-4">
-            <Button variant="outline" onClick={onBack}>
-              ← Back to Generator
+          <div className="flex items-center space-x-3">
+            <Button variant="outline" size="sm" onClick={onBack}>
+              ← Back
             </Button>
             <div>
-              <h1 className="text-xl font-bold text-gray-900">MCP Server Testing</h1>
-              <p className="text-sm text-gray-600">
-                Test your generated {language} MCP server locally
+              <h1 className="text-lg font-bold text-gray-900">MCP Testing</h1>
+              <p className="text-xs text-gray-600">
+                {language} server • {tools.length} tools • {resources.length} resources
               </p>
             </div>
           </div>
 
-          <div className="flex items-center space-x-4">
-            {/* Server Status */}
-            <div className="flex items-center space-x-2">
-              <div className={`w-3 h-3 rounded-full ${
+          <div className="flex items-center space-x-3">
+            {/* Compact Server Status */}
+            <div className="flex items-center space-x-2 text-sm">
+              <div className={`w-2 h-2 rounded-full ${
                 serverStatus === 'running' ? 'bg-green-500' :
                 serverStatus === 'starting' ? 'bg-yellow-500 animate-pulse' :
                 serverStatus === 'error' ? 'bg-red-500' :
                 'bg-gray-400'
               }`} />
-              <span className="text-sm font-medium capitalize">{serverStatus}</span>
+              <span className="font-medium capitalize">{serverStatus}</span>
               {initializationProgress && (
                 <span className="text-xs text-gray-500">({initializationProgress})</span>
               )}
             </div>
 
-            {/* Server Controls */}
+            {/* Compact Server Controls */}
             {serverStatus === 'stopped' || serverStatus === 'error' ? (
               <Button 
                 onClick={handleStartServer}
                 disabled={!webContainer || isRunning}
-                className="flex items-center space-x-2"
+                size="sm"
               >
                 {isRunning ? (
                   <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Starting...</span>
+                    <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                    Starting...
                   </>
                 ) : (
                   <>
-                    <Play className="w-4 h-4" />
-                    <span>Start Server</span>
+                    <Play className="w-3 h-3 mr-1" />
+                    Start
                   </>
                 )}
               </Button>
@@ -417,18 +463,17 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
                   onClick={handleInitializeMCP}
                   variant="outline"
                   size="sm"
-                  className="flex items-center space-x-1"
                 >
-                  <Zap className="w-3 h-3" />
-                  <span>Initialize MCP</span>
+                  <Zap className="w-3 h-3 mr-1" />
+                  Init MCP
                 </Button>
                 <Button 
                   onClick={handleStopServer}
                   variant="outline"
-                  className="flex items-center space-x-2"
+                  size="sm"
                 >
-                  <Square className="w-4 h-4" />
-                  <span>Stop Server</span>
+                  <Square className="w-3 h-3 mr-1" />
+                  Stop
                 </Button>
               </div>
             )}
@@ -436,92 +481,323 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
         </div>
       </div>
 
-      {/* Tab Navigation */}
-      <div className="bg-white border-b border-gray-200">
-        <div className="px-6">
-          <nav className="flex space-x-8">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              const isActive = activeTab === tab.id;
-              
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id as any)}
-                  className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                    isActive
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
-                >
-                  <Icon className="w-4 h-4" />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
-          </nav>
-        </div>
-      </div>
+      {/* Main Content Area */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Collapsible Sidebar - Only show for simulator tab */}
+        {activeTab === 'simulator' && (
+          <div className={`bg-white border-r border-gray-200 flex flex-col transition-all duration-300 ${
+            sidebarCollapsed ? 'w-12' : 'w-80'
+          }`}>
+            {/* Sidebar Header */}
+            <div className="p-3 border-b border-gray-200 flex items-center justify-between">
+              {!sidebarCollapsed && (
+                <h2 className="font-semibold text-gray-900 text-sm">Tools & Resources</h2>
+              )}
+              <button
+                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                className="p-1 rounded hover:bg-gray-100"
+              >
+                {sidebarCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+              </button>
+            </div>
 
-      {/* Main Content */}
-      <div className="flex-1 overflow-hidden">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={activeTab}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.2 }}
-            className="h-full"
-          >
-            {activeTab === 'simulator' && (
-              <MCPClientSimulator
-                tools={tools}
-                resources={resources}
-                serverUrl={serverUrl}
-                serverStatus={serverStatus}
-                onToolTest={handleToolTest}
-                testResults={testResults}
-              />
-            )}
-
-            {activeTab === 'debug' && (
-              <DebugConsole
-                logs={debugLogs}
-                onClear={() => setDebugLogs([])}
-              />
-            )}
-
-            {activeTab === 'metrics' && (
-              <PerformanceMetrics
-                data={performanceData}
-                serverStatus={serverStatus}
-              />
-            )}
-
-            {activeTab === 'terminal' && (
-              <div className="h-full bg-gray-900 text-white p-4">
-                <div ref={terminalRef} className="h-full font-mono text-sm">
-                  <div className="mb-4">
-                    <span className="text-green-400">$</span> MCP Server Terminal - {language.toUpperCase()}
+            {!sidebarCollapsed && (
+              <div className="flex-1 overflow-y-auto p-3">
+                {/* Tools Section */}
+                <div className="mb-4">
+                  <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">
+                    Available Tools ({tools.length})
+                  </h3>
+                  <div className="space-y-2">
+                    {tools.map((tool, index) => (
+                      <motion.div
+                        key={index}
+                        whileHover={{ scale: 1.01 }}
+                        className={`p-2 rounded-lg border cursor-pointer transition-all text-sm ${
+                          selectedTool?.name === tool.name
+                            ? 'border-blue-500 bg-blue-50'
+                            : 'border-gray-200 hover:border-gray-300 bg-white'
+                        }`}
+                        onClick={() => setSelectedTool(tool)}
+                      >
+                        <div className="flex items-center space-x-2 mb-1">
+                          <Zap className="w-3 h-3 text-purple-600" />
+                          <span className="font-medium text-gray-900 text-xs">{tool.name}</span>
+                        </div>
+                        <p className="text-xs text-gray-600 line-clamp-2">{tool.description}</p>
+                      </motion.div>
+                    ))}
                   </div>
-                  <div className="space-y-1 max-h-full overflow-y-auto">
-                    {terminalOutput.map((line, index) => (
-                      <div key={index} className="text-gray-300">
-                        {line}
+                </div>
+
+                {/* Resources Section */}
+                <div>
+                  <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">
+                    Resources ({resources.length})
+                  </h3>
+                  <div className="space-y-2">
+                    {resources.map((resource, index) => (
+                      <div
+                        key={index}
+                        className="p-2 rounded-lg border border-gray-200 bg-white text-sm"
+                      >
+                        <div className="flex items-center space-x-2 mb-1">
+                          <Database className="w-3 h-3 text-emerald-600" />
+                          <span className="font-medium text-gray-900 text-xs">{resource.name}</span>
+                        </div>
+                        <p className="text-xs text-gray-600 line-clamp-2">{resource.description}</p>
                       </div>
                     ))}
-                    {serverStatus === 'running' && (
-                      <div className="text-green-400 animate-pulse">
-                        Server is running... Ready for MCP requests
-                      </div>
-                    )}
                   </div>
                 </div>
               </div>
             )}
-          </motion.div>
-        </AnimatePresence>
+          </div>
+        )}
+
+        {/* Main Content */}
+        <div className="flex-1 flex flex-col">
+          {/* Tab Navigation */}
+          <div className="border-b border-gray-200 bg-white">
+            <nav className="flex">
+              {tabs.map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.id;
+                
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id as any)}
+                    className={`flex items-center space-x-2 py-3 px-4 text-sm font-medium transition-colors border-b-2 ${
+                      isActive
+                        ? 'border-blue-500 text-blue-600 bg-blue-50'
+                        : 'border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    <span>{tab.label}</span>
+                    {tab.id === 'chat' && (
+                      <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
+
+          {/* Tab Content */}
+          <div className="flex-1 overflow-hidden">
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeTab}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.2 }}
+                className="h-full"
+              >
+                {activeTab === 'chat' && (
+                  <LLMChatInterface
+                    mcpServerUrl={serverUrl}
+                    serverStatus={serverStatus}
+                    tools={tools}
+                    resources={resources}
+                    onMCPCall={handleMCPCall}
+                  />
+                )}
+
+                {activeTab === 'simulator' && (
+                  <>
+                    {serverStatus !== 'running' ? (
+                      <div className="flex-1 flex items-center justify-center">
+                        <div className="text-center">
+                          <div className="w-12 h-12 bg-gray-200 rounded-full flex items-center justify-center mx-auto mb-3">
+                            <Play className="w-6 h-6 text-gray-400" />
+                          </div>
+                          <h3 className="text-lg font-medium text-gray-900 mb-2">Server Not Running</h3>
+                          <p className="text-gray-600 mb-4">Start the MCP server to begin testing</p>
+                          <Button disabled className="opacity-50">
+                            Start Server First
+                          </Button>
+                        </div>
+                      </div>
+                    ) : selectedTool ? (
+                      <div className="flex-1 flex flex-col">
+                        {/* Tool Testing Area */}
+                        <div className="p-4 border-b border-gray-200 bg-white">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center space-x-3">
+                              <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center">
+                                <Zap className="w-4 h-4 text-purple-600" />
+                              </div>
+                              <div>
+                                <h2 className="text-lg font-bold text-gray-900">{selectedTool.name}</h2>
+                                <p className="text-sm text-gray-600">{selectedTool.description}</p>
+                              </div>
+                            </div>
+                            <Button 
+                              onClick={() => handleToolTest(selectedTool.name, toolParameters)} 
+                              size="sm"
+                              disabled={serverStatus !== 'running'}
+                            >
+                              <Send className="w-3 h-3 mr-1" />
+                              Test Tool
+                            </Button>
+                          </div>
+
+                          {/* Parameters */}
+                          {selectedTool.inputSchema?.properties && (
+                            <div>
+                              <h3 className="font-semibold text-gray-900 mb-2 text-sm">Parameters</h3>
+                              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                {Object.entries(selectedTool.inputSchema.properties).map(([key, schema]: [string, any]) => 
+                                  renderParameterInput({
+                                    name: key,
+                                    type: schema.type,
+                                    description: schema.description,
+                                    required: selectedTool.inputSchema.required?.includes(key)
+                                  })
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Response Area */}
+                        <div className="flex-1 flex flex-col bg-gray-50">
+                          {lastTestResult ? (
+                            <div className="flex-1 p-4">
+                              <div className="flex items-center justify-between mb-3">
+                                <h3 className="font-semibold text-gray-900">Latest Test Result</h3>
+                                <div className="flex items-center space-x-2">
+                                  <button
+                                    onClick={() => setResponseExpanded(!responseExpanded)}
+                                    className="p-1 rounded hover:bg-gray-200"
+                                  >
+                                    {responseExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                                  </button>
+                                  <div className="flex items-center space-x-1 text-xs text-gray-500">
+                                    <Clock className="w-3 h-3" />
+                                    <span>{lastTestResult.responseTime}ms</span>
+                                  </div>
+                                  {lastTestResult.status === 'success' ? (
+                                    <CheckCircle2 className="w-4 h-4 text-green-600" />
+                                  ) : (
+                                    <XCircle className="w-4 h-4 text-red-600" />
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className={`bg-white rounded-lg border ${
+                                responseExpanded ? 'h-full' : 'max-h-96'
+                              } overflow-hidden flex flex-col`}>
+                                {/* Parameters Used */}
+                                <div className="p-3 border-b border-gray-200">
+                                  <div className="text-xs font-medium text-gray-700 mb-1">Parameters:</div>
+                                  <div className="bg-gray-100 rounded p-2 text-xs font-mono">
+                                    {JSON.stringify(lastTestResult.parameters, null, 2)}
+                                  </div>
+                                </div>
+
+                                {/* Response/Error */}
+                                <div className="flex-1 p-3 overflow-y-auto">
+                                  {lastTestResult.status === 'success' ? (
+                                    <div>
+                                      <div className="text-xs font-medium text-gray-700 mb-2">Response:</div>
+                                      {lastTestResult.result?.result?.content?.[0]?.text ? (
+                                        <div className="bg-green-50 rounded border border-green-200 p-3">
+                                          <div className="text-xs font-medium text-green-700 mb-2">API Response:</div>
+                                          <pre className="text-xs whitespace-pre-wrap text-green-800">
+                                            {lastTestResult.result.result.content[0].text}
+                                          </pre>
+                                        </div>
+                                      ) : (
+                                        <div className="bg-gray-50 rounded border p-3 text-xs font-mono">
+                                          <pre className="whitespace-pre-wrap">
+                                            {JSON.stringify(lastTestResult.result, null, 2)}
+                                          </pre>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <div>
+                                      <div className="text-xs font-medium text-red-700 mb-2">Error:</div>
+                                      <div className="bg-red-50 rounded border border-red-200 p-3 text-xs text-red-800">
+                                        {lastTestResult.error || 'Unknown error'}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+
+                                <div className="p-3 border-t border-gray-200 text-xs text-gray-600">
+                                  {new Date(lastTestResult.timestamp).toLocaleString()}
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex-1 flex items-center justify-center">
+                              <div className="text-center">
+                                <Send className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                                <h3 className="text-lg font-medium text-gray-900 mb-2">No Test Results Yet</h3>
+                                <p className="text-gray-600">Run a tool test to see the response here</p>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex-1 flex items-center justify-center">
+                        <div className="text-center">
+                          <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                            <Zap className="w-6 h-6 text-blue-600" />
+                          </div>
+                          <h3 className="text-lg font-medium text-gray-900 mb-2">Select a Tool to Test</h3>
+                          <p className="text-gray-600">Choose a tool from the sidebar to start testing</p>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {activeTab === 'debug' && (
+                  <DebugConsole
+                    logs={debugLogs}
+                    onClear={() => setDebugLogs([])}
+                  />
+                )}
+
+                {activeTab === 'metrics' && (
+                  <PerformanceMetrics
+                    data={performanceData}
+                    serverStatus={serverStatus}
+                  />
+                )}
+
+                {activeTab === 'terminal' && (
+                  <div className="h-full bg-gray-900 text-white p-3">
+                    <div ref={terminalRef} className="h-full font-mono text-xs">
+                      <div className="mb-2">
+                        <span className="text-green-400">$</span> MCP Server Terminal - {language.toUpperCase()}
+                      </div>
+                      <div className="space-y-1 max-h-full overflow-y-auto">
+                        {terminalOutput.map((line, index) => (
+                          <div key={index} className="text-gray-300">
+                            {line}
+                          </div>
+                        ))}
+                        {serverStatus === 'running' && (
+                          <div className="text-green-400 animate-pulse">
+                            Server is running... Ready for MCP requests
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            </AnimatePresence>
+          </div>
+        </div>
       </div>
     </div>
   );

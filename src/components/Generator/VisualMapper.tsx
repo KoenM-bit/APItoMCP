@@ -20,7 +20,9 @@ import {
   Play, 
   Code,
   Eye,
-  Download
+  Download,
+  ChevronLeft,
+  ChevronRight
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Card, CardContent, CardHeader } from '../ui/Card';
@@ -41,6 +43,7 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
   onBack 
 }) => {
   const [showPreview, setShowPreview] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // Generate initial nodes from real API endpoints
   const generateInitialNodes = () => {
@@ -64,19 +67,19 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
         type: 'input',
         data: { 
           label: (
-            <div className={`p-3 bg-gradient-to-r ${color} text-white rounded-lg min-w-[200px]`}>
-              <div className="font-semibold">{endpoint.method} {endpoint.path}</div>
-              <div className="text-xs opacity-90 mt-1">{endpoint.description}</div>
+            <div className={`p-2 bg-gradient-to-r ${color} text-white rounded-lg min-w-[160px]`}>
+              <div className="font-semibold text-sm">{endpoint.method} {endpoint.path}</div>
+              <div className="text-xs opacity-90 mt-1 line-clamp-2">{endpoint.description}</div>
               {endpoint.parameters.length > 0 && (
                 <div className="text-xs opacity-75 mt-1">
-                  {endpoint.parameters.length} parameter{endpoint.parameters.length !== 1 ? 's' : ''}
+                  {endpoint.parameters.length} param{endpoint.parameters.length !== 1 ? 's' : ''}
                 </div>
               )}
             </div>
           ),
           endpoint
         },
-        position: { x: 100, y: 100 + (index * 120) },
+        position: { x: 100, y: 80 + (index * 100) },
         style: { border: 'none', background: 'transparent' }
       });
     });
@@ -92,12 +95,12 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
         id: toolId,
         data: { 
           label: (
-            <div className="p-4 bg-white border-2 border-purple-300 rounded-lg shadow-sm min-w-[250px]">
+            <div className="p-3 bg-white border-2 border-purple-300 rounded-lg shadow-sm min-w-[200px]">
               <div className="flex items-center space-x-2 mb-2">
-                <Zap className="w-4 h-4 text-purple-600" />
-                <span className="font-semibold text-purple-900">{tool.name}</span>
+                <Zap className="w-3 h-3 text-purple-600" />
+                <span className="font-semibold text-purple-900 text-sm">{tool.name}</span>
               </div>
-              <div className="text-xs text-gray-600 mb-2">{tool.description}</div>
+              <div className="text-xs text-gray-600 mb-2 line-clamp-2">{tool.description}</div>
               <div className="text-xs text-gray-500">
                 {endpoint.method} {endpoint.path}
               </div>
@@ -106,7 +109,7 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
           type: 'tool',
           group: tool // Keep for backward compatibility
         },
-        position: { x: 500, y: 100 + (index * 120) },
+        position: { x: 400, y: 80 + (index * 100) },
         style: { border: 'none', background: 'transparent' }
       });
 
@@ -135,12 +138,12 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
         id: resourceId,
         data: { 
           label: (
-            <div className="p-4 bg-white border-2 border-emerald-300 rounded-lg shadow-sm min-w-[250px]">
+            <div className="p-3 bg-white border-2 border-emerald-300 rounded-lg shadow-sm min-w-[200px]">
               <div className="flex items-center space-x-2 mb-2">
-                <Database className="w-4 h-4 text-emerald-600" />
-                <span className="font-semibold text-emerald-900">{resourceName} Resource</span>
+                <Database className="w-3 h-3 text-emerald-600" />
+                <span className="font-semibold text-emerald-900 text-sm">{resourceName} Resource</span>
               </div>
-              <div className="text-xs text-gray-600 mb-2">
+              <div className="text-xs text-gray-600 mb-2 line-clamp-2">
                 Data from {endpoint.path}
               </div>
               <div className="text-xs text-gray-500">
@@ -151,7 +154,7 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
           type: 'resource',
           endpoint
         },
-        position: { x: 800, y: 100 + (index * 150) },
+        position: { x: 700, y: 80 + (index * 120) },
         style: { border: 'none', background: 'transparent' }
       });
 
@@ -367,25 +370,25 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
 
   return (
     <div className="h-screen flex flex-col">
-      {/* Header */}
-      <div className="bg-white border-b border-gray-200 px-6 py-4">
+      {/* Compact Header */}
+      <div className="bg-white border-b border-gray-200 px-4 py-3">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Visual MCP Mapper</h1>
-            <p className="text-gray-600">
+            <h1 className="text-xl font-bold text-gray-900">Visual MCP Mapper</h1>
+            <p className="text-sm text-gray-600">
               {info.title ? `Mapping ${info.title} API` : 'Map your API endpoints to MCP tools and resources'}
             </p>
           </div>
-          <div className="flex items-center space-x-3">
-            <Button variant="outline" onClick={() => setShowPreview(!showPreview)}>
-              <Eye className="w-4 h-4 mr-2" />
+          <div className="flex items-center space-x-2">
+            <Button variant="outline" size="sm" onClick={() => setShowPreview(!showPreview)}>
+              <Eye className="w-3 h-3 mr-1" />
               {showPreview ? 'Hide' : 'Show'} Preview
             </Button>
-            <Button variant="outline" onClick={onBack}>
+            <Button variant="outline" size="sm" onClick={onBack}>
               Back
             </Button>
-            <Button onClick={handleGenerateCode}>
-              <Code className="w-4 h-4 mr-2" />
+            <Button size="sm" onClick={handleGenerateCode}>
+              <Code className="w-3 h-3 mr-1" />
               Generate Code
             </Button>
           </div>
@@ -393,97 +396,118 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
       </div>
 
       <div className="flex-1 flex">
-        {/* Sidebar */}
-        <div className="w-80 bg-gray-50 border-r border-gray-200 flex flex-col">
-          <div className="p-4 border-b border-gray-200">
-            <h2 className="font-semibold text-gray-900 mb-3">API Information</h2>
-            {info.title && (
-              <div className="mb-3">
-                <div className="text-sm font-medium text-gray-700">API Title</div>
-                <div className="text-sm text-gray-600">{info.title}</div>
-              </div>
+        {/* Collapsible Sidebar */}
+        <div className={`bg-gray-50 border-r border-gray-200 flex flex-col transition-all duration-300 ${
+          sidebarCollapsed ? 'w-12' : 'w-64'
+        }`}>
+          <div className="p-3 border-b border-gray-200 flex items-center justify-between">
+            {!sidebarCollapsed && (
+              <h2 className="font-semibold text-gray-900 text-sm">API Information</h2>
             )}
-            {info.version && (
-              <div className="mb-3">
-                <div className="text-sm font-medium text-gray-700">Version</div>
-                <div className="text-sm text-gray-600">{info.version}</div>
-              </div>
-            )}
-            {info.description && (
-              <div className="mb-3">
-                <div className="text-sm font-medium text-gray-700">Description</div>
-                <div className="text-sm text-gray-600">{info.description}</div>
-              </div>
-            )}
+            <button
+              onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              className="p-1 rounded hover:bg-gray-200"
+            >
+              {sidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+            </button>
           </div>
 
-          <div className="p-4 border-b border-gray-200">
-            <h2 className="font-semibold text-gray-900 mb-3">Discovered Endpoints</h2>
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {endpoints.map((endpoint, index) => (
-                <motion.div
-                  key={endpoint.id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.05 }}
-                  className="p-3 bg-white rounded-lg border border-gray-200 text-xs"
-                >
-                  <div className="flex items-center space-x-2 mb-1">
-                    <span className={`px-2 py-1 text-xs font-medium rounded ${
-                      endpoint.method === 'GET' ? 'bg-blue-100 text-blue-800' :
-                      endpoint.method === 'POST' ? 'bg-green-100 text-green-800' :
-                      endpoint.method === 'PUT' ? 'bg-yellow-100 text-yellow-800' :
-                      endpoint.method === 'DELETE' ? 'bg-red-100 text-red-800' :
-                      'bg-purple-100 text-purple-800'
-                    }`}>
-                      {endpoint.method}
-                    </span>
+          {!sidebarCollapsed && (
+            <div className="flex-1 overflow-y-auto p-3 space-y-4">
+              {/* API Info */}
+              <div>
+                {info.title && (
+                  <div className="mb-2">
+                    <div className="text-xs font-medium text-gray-700">API Title</div>
+                    <div className="text-xs text-gray-600">{info.title}</div>
                   </div>
-                  <div className="font-medium text-gray-900 mb-1">{endpoint.path}</div>
-                  <div className="text-gray-600">{endpoint.description}</div>
-                  {endpoint.parameters.length > 0 && (
-                    <div className="text-gray-500 mt-1">
-                      {endpoint.parameters.length} parameter{endpoint.parameters.length !== 1 ? 's' : ''}
+                )}
+                {info.version && (
+                  <div className="mb-2">
+                    <div className="text-xs font-medium text-gray-700">Version</div>
+                    <div className="text-xs text-gray-600">{info.version}</div>
+                  </div>
+                )}
+                {info.description && (
+                  <div className="mb-2">
+                    <div className="text-xs font-medium text-gray-700">Description</div>
+                    <div className="text-xs text-gray-600 line-clamp-3">{info.description}</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Endpoints */}
+              <div>
+                <h3 className="font-semibold text-gray-900 mb-2 text-sm">Endpoints ({endpoints.length})</h3>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {endpoints.map((endpoint, index) => (
+                    <motion.div
+                      key={endpoint.id}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: index * 0.02 }}
+                      className="p-2 bg-white rounded-lg border border-gray-200 text-xs"
+                    >
+                      <div className="flex items-center space-x-2 mb-1">
+                        <span className={`px-1 py-0.5 text-xs font-medium rounded ${
+                          endpoint.method === 'GET' ? 'bg-blue-100 text-blue-800' :
+                          endpoint.method === 'POST' ? 'bg-green-100 text-green-800' :
+                          endpoint.method === 'PUT' ? 'bg-yellow-100 text-yellow-800' :
+                          endpoint.method === 'DELETE' ? 'bg-red-100 text-red-800' :
+                          'bg-purple-100 text-purple-800'
+                        }`}>
+                          {endpoint.method}
+                        </span>
+                      </div>
+                      <div className="font-medium text-gray-900 mb-1 line-clamp-1">{endpoint.path}</div>
+                      <div className="text-gray-600 line-clamp-2">{endpoint.description}</div>
+                      {endpoint.parameters.length > 0 && (
+                        <div className="text-gray-500 mt-1">
+                          {endpoint.parameters.length} param{endpoint.parameters.length !== 1 ? 's' : ''}
+                        </div>
+                      )}
+                    </motion.div>
+                  ))}
+                </div>
+              </div>
+
+              {/* MCP Components */}
+              <div>
+                <h3 className="font-semibold text-gray-900 mb-2 text-sm">MCP Components</h3>
+                <div className="space-y-2">
+                  <div className="p-2 bg-purple-50 border border-purple-200 rounded-lg">
+                    <div className="flex items-center space-x-2 mb-1">
+                      <Zap className="w-3 h-3 text-purple-600" />
+                      <span className="font-medium text-purple-900 text-xs">Tools</span>
                     </div>
-                  )}
-                </motion.div>
-              ))}
-            </div>
-          </div>
-
-          <div className="p-4 border-b border-gray-200">
-            <h2 className="font-semibold text-gray-900 mb-3">MCP Components</h2>
-            <div className="space-y-3">
-              <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg">
-                <div className="flex items-center space-x-2 mb-2">
-                  <Zap className="w-4 h-4 text-purple-600" />
-                  <span className="font-medium text-purple-900">Tools</span>
+                    <p className="text-xs text-purple-700">Functions that Claude can call</p>
+                  </div>
+                  <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-lg">
+                    <div className="flex items-center space-x-2 mb-1">
+                      <Database className="w-3 h-3 text-emerald-600" />
+                      <span className="font-medium text-emerald-900 text-xs">Resources</span>
+                    </div>
+                    <p className="text-xs text-emerald-700">Data that Claude can read</p>
+                  </div>
                 </div>
-                <p className="text-xs text-purple-700">Functions that Claude can call</p>
               </div>
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg">
-                <div className="flex items-center space-x-2 mb-2">
-                  <Database className="w-4 h-4 text-emerald-600" />
-                  <span className="font-medium text-emerald-900">Resources</span>
-                </div>
-                <p className="text-xs text-emerald-700">Data that Claude can read</p>
-              </div>
-            </div>
-          </div>
 
-          <div className="flex-1 p-4">
-            <h2 className="font-semibold text-gray-900 mb-3">Configuration</h2>
-            <div className="space-y-3">
-              <Button variant="outline" size="sm" className="w-full justify-start">
-                <Settings className="w-4 h-4 mr-2" />
-                Authentication
-              </Button>
-              <Button variant="outline" size="sm" className="w-full justify-start">
-                <Play className="w-4 h-4 mr-2" />
-                Test Mapping
-              </Button>
+              {/* Quick Actions */}
+              <div>
+                <h3 className="font-semibold text-gray-900 mb-2 text-sm">Quick Actions</h3>
+                <div className="space-y-2">
+                  <Button variant="outline" size="sm" className="w-full justify-start text-xs">
+                    <Settings className="w-3 h-3 mr-1" />
+                    Authentication
+                  </Button>
+                  <Button variant="outline" size="sm" className="w-full justify-start text-xs">
+                    <Play className="w-3 h-3 mr-1" />
+                    Test Mapping
+                  </Button>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Main Canvas */}
@@ -508,12 +532,12 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
               maskColor="rgb(240, 240, 240, 0.6)"
             />
             <Panel position="top-right">
-              <Card className="w-64">
-                <CardHeader className="pb-3">
-                  <h3 className="font-semibold">Mapping Stats</h3>
+              <Card className="w-48">
+                <CardHeader className="pb-2">
+                  <h3 className="font-semibold text-sm">Mapping Stats</h3>
                 </CardHeader>
                 <CardContent className="pt-0">
-                  <div className="space-y-2 text-sm">
+                  <div className="space-y-1 text-xs">
                     <div className="flex justify-between">
                       <span className="text-gray-600">API Endpoints:</span>
                       <span className="font-medium">{endpoints.length}</span>
@@ -541,14 +565,14 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
         {showPreview && (
           <motion.div
             initial={{ width: 0 }}
-            animate={{ width: 400 }}
+            animate={{ width: 320 }}
             exit={{ width: 0 }}
             className="bg-gray-900 text-white overflow-hidden"
           >
-            <div className="p-4 border-b border-gray-700">
-              <h3 className="font-semibold">Generated Code Preview</h3>
+            <div className="p-3 border-b border-gray-700">
+              <h3 className="font-semibold text-sm">Generated Code Preview</h3>
             </div>
-            <div className="p-4 font-mono text-sm">
+            <div className="p-3 font-mono text-xs">
               <pre className="text-green-400">
 {`# Generated MCP Server for ${info.title || 'API'}
 from mcp.server import Server
