@@ -44,6 +44,13 @@ export const MCPClientSimulator: React.FC<MCPClientSimulatorProps> = ({
   const [selectedResource, setSelectedResource] = useState<any>(null);
   const [activeView, setActiveView] = useState<'tools' | 'resources' | 'results'>('tools');
 
+  // Clear parameters when tool changes
+  const handleToolSelection = (tool: any) => {
+    setSelectedTool(tool);
+    setToolParameters({}); // Clear all parameters when switching tools
+    console.log(`🔧 Tool selected: ${tool?.name}, parameters cleared`);
+  };
+
   // Add this to see when activeView changes
   console.log('🎨 Current activeView:', activeView);
 
@@ -171,7 +178,7 @@ export const MCPClientSimulator: React.FC<MCPClientSimulatorProps> = ({
                       ? 'border-blue-500 bg-blue-50'
                       : 'border-gray-200 hover:border-gray-300 bg-white'
                   }`}
-                  onClick={() => setSelectedTool(tool)}
+                  onClick={() => handleToolSelection(tool)}
                 >
                   <div className="flex items-center space-x-2 mb-2">
                     <Zap className="w-4 h-4 text-purple-600" />
@@ -325,10 +332,21 @@ export const MCPClientSimulator: React.FC<MCPClientSimulatorProps> = ({
                       <p className="text-gray-600">{selectedTool.description}</p>
                     </div>
                   </div>
-                  <Button onClick={handleToolTest} className="flex items-center space-x-2">
-                    <Send className="w-4 h-4" />
-                    <span>Test Tool</span>
-                  </Button>
+                  <div className="flex items-center space-x-2">
+                    <Button 
+                      onClick={() => setToolParameters({})} 
+                      variant="outline" 
+                      size="sm"
+                      className="flex items-center space-x-1"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      <span>Clear</span>
+                    </Button>
+                    <Button onClick={handleToolTest} className="flex items-center space-x-2">
+                      <Send className="w-4 h-4" />
+                      <span>Test Tool</span>
+                    </Button>
+                  </div>
                 </div>
               </CardHeader>
               <CardContent>
