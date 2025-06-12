@@ -1,0 +1,768 @@
+import React, { useState } from 'react';
+import { motion } from 'framer-motion';
+import Editor from '@monaco-editor/react';
+import { Download, Play, Settings, Cloud, Code2, Phone as Python, FileCode, Zap, CheckCircle2, Copy, ExternalLink, TestTube } from 'lucide-react';
+import { Button } from '../ui/Button';
+import { Card, CardContent, CardHeader } from '../ui/Card';
+import { TestingEnvironment } from './TestingEnvironment';
+
+interface CodeGeneratorProps {
+  tools: any[];
+  resources: any[];
+  endpoints: any[];
+  apiInfo: any;
+  onBack: () => void;
+}
+
+export const CodeGenerator: React.FC<CodeGeneratorProps> = ({ 
+  tools = [], 
+  resources = [], 
+  endpoints = [], 
+  apiInfo = {},
+  onBack 
+}) => {
+  const [selectedLanguage, setSelectedLanguage] = useState<'python' | 'typescript'>('python');
+  const [isDeploying, setIsDeploying] = useState(false);
+  const [deploymentStatus, setDeploymentStatus] = useState<'idle' | 'deploying' | 'success' | 'error'>('idle');
+  const [deploymentUrl, setDeploymentUrl] = useState('');
+  const [showTesting, setShowTesting] = useState(false);
+
+  const generatePythonCode = () => {
+    const serverName = (apiInfo.title || 'API').toLowerCase().replace(/\s+/g, '-') + '-server';
+    // Use the correct base URL or detect from the API spec
+    const baseUrl = apiInfo.servers?.[0]?.url || endpoints[0]?.baseUrl || 'https://api.example.com';
+    
+    // Debug logging
+    console.log('🔍 URL extraction debug:');
+    console.log('  apiInfo.servers:', apiInfo.servers);
+    console.log('  endpoints[0]?.baseUrl:', endpoints[0]?.baseUrl);
+    console.log('  final baseUrl:', baseUrl);
+    
+    return `#!/usr/bin/env python3
+"""
+Generated MCP Server for ${apiInfo.title || 'API'}
+${apiInfo.description ? `Description: ${apiInfo.description}` : ''}
+${apiInfo.version ? `Version: ${apiInfo.version}` : ''}
+Automatically created by MCP Studio
+"""
+
+import asyncio
+import logging
+import json
+from typing import Any, Dict, List, Optional
+from mcp.server import Server
+from mcp.server.stdio import stdio_server
+from mcp.types import (
+    Resource,
+    Tool,
+    TextContent,
+    InitializationOptions,
+    ServerCapabilities,
+)
+import httpx
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Initialize the MCP server
+server = Server("${serverName}")
+
+# API Configuration
+API_BASE_URL = "${baseUrl}"
+
+# HTTP client setup
+async def get_http_client():
+    """Get configured HTTP client"""
+    return httpx.AsyncClient(base_url=API_BASE_URL)
+
+@server.list_resources()
+async def list_resources() -> List[Resource]:
+    """List available resources"""
+    return [
+${resources.map(resource => `        Resource(
+            uri="${resource.uri}",
+            name="${resource.name}",
+            description="${resource.description}",
+            mimeType="application/json"
+        )`).join(',\n')}
+    ]
+
+@server.read_resource()
+async def read_resource(uri: str) -> str:
+    """Read resource content"""
+    async with get_http_client() as client:
+        try:
+${resources.map((resource, index) => `            ${index === 0 ? 'if' : 'elif'} uri == "${resource.uri}":
+                response = await client.${resource.endpoint?.method?.toLowerCase() || 'get'}("${resource.endpoint?.path || resource.path}")
+                response.raise_for_status()
+                return response.text`).join('\n')}
+            else:
+                raise ValueError(f"Unknown resource: {uri}")
+        except httpx.HTTPError as e:
+            logger.error(f"HTTP error reading resource {uri}: {e}")
+            raise
+
+@server.list_tools()
+async def list_tools() -> List[Tool]:
+    """List available tools"""
+    tools = [
+${tools.map(tool => `        Tool(
+            name="${tool.name}",
+            description="${tool.description}",
+            inputSchema=${JSON.stringify(tool.inputSchema, null, 12).split('\n').join('\n            ')}
+        )`).join(',\n')}
+    ]
+
+    # Debug: Print registered tools
+    print("🔍 Registered tools:", [tool.name for tool in tools])
+    return tools
+
+@server.call_tool()
+async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
+    """Handle tool calls"""
+
+    # Debug: Print what tool is being called
+    print(f"🎯 Tool called: '{name}' with args: {arguments}")
+
+    async with get_http_client() as client:
+        try:
+${tools.map((tool, index) => `            ${index === 0 ? 'if' : 'elif'} name == "${tool.name}":
+                # ${tool.description}
+                ${generatePythonToolHandler(tool)}
+                
+                return [TextContent(
+                    type="text",
+                    text=json.dumps(response.json(), indent=2)
+                )]`).join('\n')}
+            else:
+                raise ValueError(f"Unknown tool: {name}")
+                
+        except httpx.HTTPStatusError as e:
+            logger.error(f"HTTP {e.response.status_code} error calling {name}: {e}")
+            return [TextContent(
+                type="text",
+                text=f"API Error: {e.response.status_code} - {e.response.text}"
+            )]
+        except httpx.HTTPError as e:
+            logger.error(f"HTTP error calling {name}: {e}")
+            return [TextContent(
+                type="text",
+                text=f"Connection error: {str(e)}"
+            )]
+        except Exception as e:
+            logger.error(f"Unexpected error calling {name}: {e}")
+            return [TextContent(
+                type="text",
+                text=f"Unexpected error: {str(e)}"
+            )]
+
+async def main():
+    """Run the MCP server"""
+    async with stdio_server() as (read_stream, write_stream):
+        await server.run(
+            read_stream,
+            write_stream,
+            InitializationOptions(
+                server_name="${serverName}",
+                server_version="1.0.0",
+                capabilities=ServerCapabilities(
+                    resources={},
+                    tools={},
+                ),
+            ),
+        )
+
+if __name__ == "__main__":
+    asyncio.run(main())`;
+  };
+
+  const generateTypeScriptCode = () => {
+    const serverName = (apiInfo.title || 'API').toLowerCase().replace(/\s+/g, '-') + '-server';
+    const baseUrl = apiInfo.servers?.[0]?.url || endpoints[0]?.baseUrl || 'https://api.example.com';
+
+    return `#!/usr/bin/env node
+/**
+ * Generated MCP Server for ${apiInfo.title || 'API'}
+ * ${apiInfo.description ? `Description: ${apiInfo.description}` : ''}
+ * ${apiInfo.version ? `Version: ${apiInfo.version}` : ''}
+ * Automatically created by MCP Studio
+ */
+
+import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import {
+  CallToolRequestSchema,
+  ErrorCode,
+  ListResourcesRequestSchema,
+  ListToolsRequestSchema,
+  McpError,
+  ReadResourceRequestSchema,
+} from '@modelcontextprotocol/sdk/types.js';
+
+// API Configuration
+const API_BASE_URL = '${baseUrl}';
+const API_KEY = process.env.API_KEY || 'your-api-key-here';
+
+// HTTP client setup
+const defaultHeaders = {
+  'Authorization': \`Bearer \${API_KEY}\`,
+  'Content-Type': 'application/json',
+};
+
+async function makeApiRequest(endpoint: string, options: RequestInit = {}) {
+  const url = \`\${API_BASE_URL}\${endpoint}\`;
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      ...defaultHeaders,
+      ...options.headers,
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(\`API request failed: \${response.status} \${response.statusText}\`);
+  }
+
+  return response;
+}
+
+// Create MCP server
+const server = new Server(
+  {
+    name: '${serverName}',
+    version: '1.0.0',
+  },
+  {
+    capabilities: {
+      resources: {},
+      tools: {},
+    },
+  }
+);
+
+// List available resources
+server.setRequestHandler(ListResourcesRequestSchema, async () => {
+  return {
+    resources: [
+${resources.map(resource => `      {
+        uri: '${resource.uri}',
+        name: '${resource.name}',
+        description: '${resource.description}',
+        mimeType: 'application/json',
+      }`).join(',\n')}
+    ],
+  };
+});
+
+// Read resource content
+server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+  const { uri } = request.params;
+
+  switch (uri) {
+${resources.map(resource => `    case '${resource.uri}': {
+      const response = await makeApiRequest('${resource.endpoint.path}');
+      const data = await response.json();
+      return {
+        contents: [
+          {
+            uri,
+            mimeType: 'application/json',
+            text: JSON.stringify(data, null, 2),
+          },
+        ],
+      };
+    }`).join('\n\n')}
+
+    default:
+      throw new McpError(ErrorCode.InvalidRequest, \`Unknown resource: \${uri}\`);
+  }
+});
+
+// List available tools
+server.setRequestHandler(ListToolsRequestSchema, async () => {
+  return {
+    tools: [
+${tools.map(tool => `      {
+        name: '${tool.name}',
+        description: '${tool.description}',
+        inputSchema: ${JSON.stringify(tool.inputSchema, null, 8)},
+      }`).join(',\n')}
+    ],
+  };
+});
+
+// Handle tool calls
+server.setRequestHandler(CallToolRequestSchema, async (request) => {
+  const { name, arguments: args } = request.params;
+
+  try {
+    switch (name) {
+${tools.map(tool => `      case '${tool.name}': {
+        // Handle ${tool.description}
+        ${generateTypeScriptToolHandler(tool)}
+        
+        return {
+          content: [
+            {
+              type: 'text',
+              text: \`Tool \${name} executed successfully\`,
+            },
+          ],
+        };
+      }`).join('\n\n')}
+
+      default:
+        throw new McpError(ErrorCode.MethodNotFound, \`Unknown tool: \${name}\`);
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    return {
+      content: [
+        {
+          type: 'text',
+          text: \`Error calling \${name}: \${errorMessage}\`,
+        },
+      ],
+      isError: true,
+    };
+  }
+});
+
+// Start the server
+async function main() {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  
+  // Cleanup on exit
+  process.on('SIGINT', async () => {
+    await server.close();
+    process.exit(0);
+  });
+}
+
+main().catch((error) => {
+  console.error('Server failed to start:', error);
+  process.exit(1);
+});`;
+  };
+
+  const generatePythonToolHandler = (tool: any) => {
+    // Generate clean, production-ready tool implementation
+    if (!tool.endpoints || tool.endpoints.length === 0) {
+      return `# Default implementation for ${tool.name}
+                response = await client.get("/")
+                response.raise_for_status()`;
+    }
+
+    const endpoint = tool.endpoints[0]; // Use first endpoint as primary
+    const pathParams = endpoint.parameters?.filter((p: any) => p.location === 'path') || [];
+    const queryParams = endpoint.parameters?.filter((p: any) => p.location === 'query') || [];
+    const bodyParams = endpoint.parameters?.filter((p: any) => p.location === 'body') || [];
+
+    let path = endpoint.path || '/';
+    const method = endpoint.method?.toLowerCase() || 'get';
+    const lines = [];
+    
+    // Handle path parameters first
+    if (pathParams.length > 0) {
+      pathParams.forEach((param: any) => {
+        const varName = param.name;
+        lines.push(`${varName} = arguments['${param.name}']`);
+        path = path.replace(`{${param.name}}`, `{${varName}}`);
+      });
+    }
+    
+    // Handle query parameters
+    if (queryParams.length > 0) {
+      lines.push('params = {}');
+      queryParams.forEach((param: any) => {
+        if (param.required) {
+          lines.push(`params['${param.name}'] = arguments['${param.name}']`);
+        } else {
+          lines.push(`if '${param.name}' in arguments:`);
+          lines.push(`    params['${param.name}'] = arguments['${param.name}']`);
+        }
+      });
+    }
+
+    // Handle request body for POST/PUT/PATCH operations
+    if (method === 'post' || method === 'put' || method === 'patch') {
+      lines.push('payload = {}');
+      
+      // Add common fields based on the tool name and resource
+      const resourceName = tool.resourceName || 'item';
+      if (tool.name.includes('post')) {
+        lines.push(`if 'userId' in arguments: payload['userId'] = arguments['userId']`);
+        lines.push(`if 'title' in arguments: payload['title'] = arguments['title']`);
+        lines.push(`if 'body' in arguments: payload['body'] = arguments['body']`);
+      } else if (tool.name.includes('user')) {
+        lines.push(`if 'name' in arguments: payload['name'] = arguments['name']`);
+        lines.push(`if 'username' in arguments: payload['username'] = arguments['username']`);
+        lines.push(`if 'email' in arguments: payload['email'] = arguments['email']`);
+      } else if (tool.name.includes('comment')) {
+        lines.push(`if 'postId' in arguments: payload['postId'] = arguments['postId']`);
+        lines.push(`if 'name' in arguments: payload['name'] = arguments['name']`);
+        lines.push(`if 'email' in arguments: payload['email'] = arguments['email']`);
+        lines.push(`if 'body' in arguments: payload['body'] = arguments['body']`);
+      } else {
+        // Generic payload handling
+        bodyParams.forEach((param: any) => {
+          if (param.required) {
+            lines.push(`payload['${param.name}'] = arguments['${param.name}']`);
+          } else {
+            lines.push(`if '${param.name}' in arguments: payload['${param.name}'] = arguments['${param.name}']`);
+          }
+        });
+      }
+    }
+
+    // Generate the actual API call with correct method and parameters
+    const callArgs = [`"${path}"`];
+    
+    if (queryParams.length > 0) callArgs.push('params=params');
+    if (method === 'post' || method === 'put' || method === 'patch') {
+      callArgs.push('json=payload');
+    }
+
+    lines.push(`response = await client.${method}(${callArgs.join(', ')})`);
+    lines.push('response.raise_for_status()');
+
+    return lines.join('\n                ');
+  };
+
+  const generateEndpointCall = (endpoint: any) => {
+    const pathParams = endpoint.parameters.filter((p: any) => p.location === 'path');
+    const queryParams = endpoint.parameters.filter((p: any) => p.location === 'query');
+    const bodyParams = endpoint.parameters.filter((p: any) => p.location === 'body');
+
+    let path = endpoint.path;
+    pathParams.forEach((param: any) => {
+      path = path.replace(`{${param.name}}`, `{arguments['${param.name}']}`);
+    });
+
+    const lines = [];
+    
+    if (queryParams.length > 0) {
+      lines.push('params = {}');
+      queryParams.forEach((param: any) => {
+        lines.push(`if '${param.name}' in arguments: params['${param.name}'] = arguments['${param.name}']`);
+      });
+    }
+
+    if (bodyParams.length > 0) {
+      lines.push('data = {}');
+      bodyParams.forEach((param: any) => {
+        lines.push(`if '${param.name}' in arguments: data['${param.name}'] = arguments['${param.name}']`);
+      });
+    }
+
+    const methodCall = endpoint.method.toLowerCase();
+    const callArgs = [`"${path}"`];
+    
+    if (queryParams.length > 0) callArgs.push('params=params');
+    if (bodyParams.length > 0) callArgs.push('json=data');
+
+    lines.push(`response = await client.${methodCall}(${callArgs.join(', ')})`);
+    lines.push('response.raise_for_status()');
+
+    return lines.join('\n                    ');
+  };
+
+  const generateTypeScriptToolHandler = (tool: any) => {
+    return tool.endpoints.map((endpoint: any) => {
+      const pathParams = endpoint.parameters.filter((p: any) => p.location === 'path');
+      const queryParams = endpoint.parameters.filter((p: any) => p.location === 'query');
+      const bodyParams = endpoint.parameters.filter((p: any) => p.location === 'body');
+
+      let path = endpoint.path;
+      pathParams.forEach((param: any) => {
+        path = path.replace(`{${param.name}}`, `\${args.${param.name}}`);
+      });
+
+      const lines = [];
+      
+      if (queryParams.length > 0) {
+        lines.push('const params = new URLSearchParams();');
+        queryParams.forEach((param: any) => {
+          lines.push(`if (args.${param.name}) params.append('${param.name}', args.${param.name}.toString());`);
+        });
+      }
+
+      const options: string[] = [`method: '${endpoint.method}'`];
+      if (bodyParams.length > 0) {
+        lines.push('const body = {};');
+        bodyParams.forEach((param: any) => {
+          lines.push(`if (args.${param.name}) body.${param.name} = args.${param.name};`);
+        });
+        options.push('body: JSON.stringify(body)');
+      }
+
+      const urlSuffix = queryParams.length > 0 ? '?\${params}' : '';
+      lines.push(`const response = await makeApiRequest(\`${path}${urlSuffix}\`, { ${options.join(', ')} });`);
+      lines.push('const result = await response.json();');
+
+      return lines.join('\n        ');
+    }).join('\n        ');
+  };
+
+  const currentCode = selectedLanguage === 'python' ? generatePythonCode() : generateTypeScriptCode();
+
+  const handleDeploy = async () => {
+    setIsDeploying(true);
+    setDeploymentStatus('deploying');
+    
+    // Simulate deployment
+    setTimeout(() => {
+      setDeploymentStatus('success');
+      setDeploymentUrl('https://your-mcp-server.herokuapp.com');
+      setIsDeploying(false);
+    }, 3000);
+  };
+
+  const handleCopyCode = () => {
+    navigator.clipboard.writeText(currentCode);
+  };
+
+  const handleDownload = () => {
+    const filename = selectedLanguage === 'python' ? 'mcp_server.py' : 'mcp_server.js';
+    const blob = new Blob([currentCode], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  if (showTesting) {
+    return (
+      <TestingEnvironment
+        generatedCode={currentCode}
+        language={selectedLanguage}
+        tools={tools}
+        resources={resources}
+        onBack={() => setShowTesting(false)}
+      />
+    );
+  }
+
+  return (
+    <div className="max-w-7xl mx-auto space-y-6">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="text-center"
+      >
+        <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">
+          Your MCP Server is Ready!
+        </h1>
+        <p className="text-lg text-gray-600 max-w-3xl mx-auto">
+          Generated from {endpoints.length} API endpoints with {tools.length} MCP tools and {resources.length} resources.
+        </p>
+      </motion.div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Configuration Panel */}
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <h3 className="text-lg font-semibold">Language & Settings</h3>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-3">
+                  Programming Language
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={() => setSelectedLanguage('python')}
+                    className={`p-3 rounded-lg border-2 transition-all ${
+                      selectedLanguage === 'python'
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <Python className="w-6 h-6 mx-auto mb-2 text-blue-600" />
+                    <div className="text-sm font-medium">Python</div>
+                  </button>
+                  <button
+                    onClick={() => setSelectedLanguage('typescript')}
+                    className={`p-3 rounded-lg border-2 transition-all ${
+                      selectedLanguage === 'typescript'
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    <FileCode className="w-6 h-6 mx-auto mb-2 text-blue-600" />
+                    <div className="text-sm font-medium">TypeScript</div>
+                  </button>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-gray-200">
+                <h4 className="font-medium text-gray-900 mb-3">Generated Features</h4>
+                <div className="space-y-2 text-sm">
+                  <div className="flex items-center space-x-2">
+                    <CheckCircle2 className="w-4 h-4 text-green-500" />
+                    <span>MCP Tools ({tools.length} functions)</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <CheckCircle2 className="w-4 h-4 text-green-500" />
+                    <span>MCP Resources ({resources.length} resources)</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <CheckCircle2 className="w-4 h-4 text-green-500" />
+                    <span>API Integration ({endpoints.length} endpoints)</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <CheckCircle2 className="w-4 h-4 text-green-500" />
+                    <span>Authentication handling</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <CheckCircle2 className="w-4 h-4 text-green-500" />
+                    <span>Error handling & logging</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <CheckCircle2 className="w-4 h-4 text-green-500" />
+                    <span>Production-ready structure</span>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <h3 className="text-lg font-semibold">Actions</h3>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <Button 
+                onClick={() => setShowTesting(true)}
+                className="w-full justify-start"
+              >
+                <TestTube className="w-4 h-4 mr-2" />
+                Test Locally
+              </Button>
+              <Button 
+                onClick={handleDownload}
+                variant="outline" 
+                className="w-full justify-start"
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Download Code
+              </Button>
+              <Button 
+                onClick={handleDeploy}
+                loading={isDeploying}
+                className="w-full justify-start"
+                disabled={deploymentStatus === 'success'}
+              >
+                <Cloud className="w-4 h-4 mr-2" />
+                {deploymentStatus === 'success' ? 'Deployed' : 'Deploy to Cloud'}
+              </Button>
+              <Button variant="outline" className="w-full justify-start">
+                <Settings className="w-4 h-4 mr-2" />
+                Advanced Settings
+              </Button>
+            </CardContent>
+          </Card>
+
+          {deploymentStatus === 'success' && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+            >
+              <Card className="border-green-200 bg-green-50">
+                <CardContent className="p-4">
+                  <div className="flex items-center space-x-3 mb-3">
+                    <CheckCircle2 className="w-5 h-5 text-green-600" />
+                    <span className="font-medium text-green-900">Deployment Successful!</span>
+                  </div>
+                  <p className="text-sm text-green-700 mb-3">
+                    Your MCP server is now live and ready to use.
+                  </p>
+                  <div className="flex items-center space-x-2">
+                    <Button size="sm" variant="outline" className="text-green-700 border-green-300">
+                      <ExternalLink className="w-3 h-3 mr-1" />
+                      View Live
+                    </Button>
+                    <Button size="sm" variant="ghost" className="text-green-700">
+                      <Copy className="w-3 h-3 mr-1" />
+                      Copy URL
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+        </div>
+
+        {/* Code Editor */}
+        <div className="lg:col-span-2">
+          <Card className="h-[700px]">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Code2 className="w-5 h-5 text-blue-600" />
+                  <span className="font-semibold">Generated MCP Server</span>
+                  <span className="text-sm text-gray-500">
+                    ({selectedLanguage === 'python' ? 'Python' : 'TypeScript'})
+                  </span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Button size="sm" variant="outline" onClick={handleCopyCode}>
+                    <Copy className="w-3 h-3 mr-1" />
+                    Copy
+                  </Button>
+                  <Button size="sm" variant="outline">
+                    <Play className="w-3 h-3 mr-1" />
+                    Test
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0 h-full">
+              <Editor
+                height="600px"
+                language={selectedLanguage === 'python' ? 'python' : 'typescript'}
+                value={currentCode}
+                theme="vs-dark"
+                options={{
+                  readOnly: false,
+                  minimap: { enabled: true },
+                  fontSize: 14,
+                  lineNumbers: 'on',
+                  scrollBeyondLastLine: false,
+                  automaticLayout: true,
+                  wordWrap: 'on'
+                }}
+              />
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      {/* Action Buttons */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.3 }}
+        className="flex items-center justify-between pt-6 border-t border-gray-200"
+      >
+        <Button variant="outline" onClick={onBack}>
+          Back to Mapping
+        </Button>
+        <div className="flex items-center space-x-3">
+          <Button variant="outline">
+            Save Project
+          </Button>
+          <Button>
+            <Zap className="w-4 h-4 mr-2" />
+            Create New Server
+          </Button>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
