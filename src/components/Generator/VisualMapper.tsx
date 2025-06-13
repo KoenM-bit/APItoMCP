@@ -25,7 +25,13 @@ import {
   ChevronRight,
   Plus,
   Wand2,
-  X
+  X,
+  ToggleLeft,
+  ToggleRight,
+  CheckCircle2,
+  XCircle,
+  Filter,
+  RefreshCw
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Card, CardContent, CardHeader } from '../ui/Card';
@@ -40,25 +46,104 @@ interface VisualMapperProps {
   onBack: () => void;
 }
 
-export const VisualMapper: React.FC<VisualMapperProps> = ({ 
-  endpoints = [], 
+export const VisualMapper: React.FC<VisualMapperProps> = ({
+  endpoints = [],
   info = {},
-  servers = [], 
-  onNext, 
-  onBack 
+  servers = [],
+  onNext,
+  onBack
 }) => {
   const [showPreview, setShowPreview] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [customMethods, setCustomMethods] = useState<CustomMethod[]>([]);
   const [showCustomMethodModal, setShowCustomMethodModal] = useState(false);
+  const [disabledEndpoints, setDisabledEndpoints] = useState<Set<string>>(new Set());
+  const [filterMethod, setFilterMethod] = useState<'all' | 'enabled' | 'disabled'>('all');
+  const [selectedEndpointId, setSelectedEndpointId] = useState<string | null>(null);
+
+  // Toggle endpoint enabled/disabled state
+  const toggleEndpoint = (endpointId: string) => {
+    setDisabledEndpoints(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(endpointId)) {
+        newSet.delete(endpointId);
+      } else {
+        newSet.add(endpointId);
+      }
+      return newSet;
+    });
+  };
+
+  // Handle endpoint selection from visual flow
+  const handleEndpointSelect = (endpointId: string) => {
+    setSelectedEndpointId(endpointId);
+
+    // Auto-scroll to the endpoint in the sidebar
+    setTimeout(() => {
+      const endpointElement = document.getElementById(`endpoint-${endpointId}`);
+      if (endpointElement) {
+        endpointElement.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center'
+        });
+
+        // Add a brief highlight effect
+        endpointElement.classList.add('highlight-endpoint');
+        setTimeout(() => {
+          endpointElement.classList.remove('highlight-endpoint');
+        }, 2000);
+      }
+    }, 100);
+  };
+
+  // Bulk toggle operations
+  const enableAllEndpoints = () => {
+    setDisabledEndpoints(new Set());
+  };
+
+  const disableAllEndpoints = () => {
+    setDisabledEndpoints(new Set(endpoints.map(ep => ep.id)));
+  };
+
+  const toggleByMethod = (method: string) => {
+    const methodEndpoints = endpoints.filter(ep => ep.method === method);
+    const allMethodDisabled = methodEndpoints.every(ep => disabledEndpoints.has(ep.id));
+
+    setDisabledEndpoints(prev => {
+      const newSet = new Set(prev);
+      methodEndpoints.forEach(ep => {
+        if (allMethodDisabled) {
+          newSet.delete(ep.id);
+        } else {
+          newSet.add(ep.id);
+        }
+      });
+      return newSet;
+    });
+  };
+
+  // Filter endpoints based on current filter
+  const getFilteredEndpoints = () => {
+    switch (filterMethod) {
+      case 'enabled':
+        return endpoints.filter(ep => !disabledEndpoints.has(ep.id));
+      case 'disabled':
+        return endpoints.filter(ep => disabledEndpoints.has(ep.id));
+      default:
+        return endpoints;
+    }
+  };
 
   // Generate initial nodes from real API endpoints
   const generateInitialNodes = () => {
     const nodes: Node[] = [];
     const edges: Edge[] = [];
 
-    // Create endpoint nodes
-    endpoints.forEach((endpoint, index) => {
+    // Only include enabled endpoints
+    const enabledEndpoints = endpoints.filter(ep => !disabledEndpoints.has(ep.id));
+
+    // Create endpoint nodes with click handlers
+    enabledEndpoints.forEach((endpoint, index) => {
       const methodColors = {
         'GET': 'from-blue-500 to-blue-600',
         'POST': 'from-green-500 to-green-600',
@@ -68,13 +153,20 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
       };
 
       const color = methodColors[endpoint.method as keyof typeof methodColors] || 'from-gray-500 to-gray-600';
+      const isSelected = selectedEndpointId === endpoint.id;
 
       nodes.push({
         id: endpoint.id,
         type: 'input',
-        data: { 
+        data: {
           label: (
-            <div className={`p-2 bg-gradient-to-r ${color} text-white rounded-lg min-w-[160px]`}>
+            <div
+              className={`p-2 bg-gradient-to-r ${color} text-white rounded-lg min-w-[160px] cursor-pointer transition-all duration-200 ${
+                isSelected ? 'ring-2 ring-white ring-offset-2 ring-offset-blue-500 scale-105' : 'hover:scale-102'
+              }`}
+              onClick={() => handleEndpointSelect(endpoint.id)}
+              title="Click to select this endpoint in the sidebar"
+            >
               <div className="font-semibold text-sm">{endpoint.method} {endpoint.path}</div>
               <div className="text-xs opacity-90 mt-1 line-clamp-2">{endpoint.description}</div>
               {endpoint.parameters.length > 0 && (
@@ -82,25 +174,29 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
                   {endpoint.parameters.length} param{endpoint.parameters.length !== 1 ? 's' : ''}
                 </div>
               )}
+              {isSelected && (
+                <div className="absolute -top-1 -right-1 w-3 h-3 bg-white rounded-full animate-pulse" />
+              )}
             </div>
           ),
-          endpoint
+          endpoint,
+          isSelected
         },
         position: { x: 100, y: 80 + (index * 100) },
         style: { border: 'none', background: 'transparent' }
       });
     });
 
-    // Create individual tool nodes for each endpoint
-    const tools = groupEndpointsByFunction(endpoints);
-    
+    // Create individual tool nodes for each enabled endpoint
+    const tools = groupEndpointsByFunction(enabledEndpoints);
+
     tools.forEach((tool, index) => {
       const toolId = `tool-${index}`;
       const endpoint = tool.endpoints[0]; // Single endpoint per tool
-      
+
       nodes.push({
         id: toolId,
-        data: { 
+        data: {
           label: (
             <div className="p-3 bg-white border-2 border-purple-300 rounded-lg shadow-sm min-w-[200px]">
               <div className="flex items-center space-x-2 mb-2">
@@ -133,10 +229,10 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
     // Add custom method nodes
     customMethods.forEach((customMethod, index) => {
       const customToolId = `custom-tool-${index}`;
-      
+
       nodes.push({
         id: customToolId,
-        data: { 
+        data: {
           label: (
             <div className="p-3 bg-white border-2 border-orange-300 rounded-lg shadow-sm min-w-[200px]">
               <div className="flex items-center space-x-2 mb-2">
@@ -158,9 +254,9 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
       });
     });
 
-    // Create resource nodes for GET endpoints that return data
-    const resourceEndpoints = endpoints.filter(ep => 
-      ep.method === 'GET' && 
+    // Create resource nodes for GET endpoints that return data (only enabled ones)
+    const resourceEndpoints = enabledEndpoints.filter(ep =>
+      ep.method === 'GET' &&
       !ep.path.includes('{') && // Not parameterized
       ep.responses.some((r: any) => r.statusCode >= 200 && r.statusCode < 300)
     );
@@ -168,10 +264,10 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
     resourceEndpoints.forEach((endpoint, index) => {
       const resourceId = `resource-${index}`;
       const resourceName = endpoint.path.split('/').pop() || 'Data';
-      
+
       nodes.push({
         id: resourceId,
-        data: { 
+        data: {
           label: (
             <div className="p-3 bg-white border-2 border-emerald-300 rounded-lg shadow-sm min-w-[200px]">
               <div className="flex items-center space-x-2 mb-2">
@@ -213,12 +309,12 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
     endpoints.forEach(endpoint => {
       const pathParts = endpoint.path.split('/').filter(Boolean);
       const method = endpoint.method.toLowerCase();
-      
+
       // Better resource extraction logic
       let resourceName = '';
       let toolName = '';
       let description = '';
-      
+
       // Handle different path patterns
       if (pathParts.length === 1) {
         // Simple case: /posts, /users, /comments
@@ -233,11 +329,11 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
         // Fallback: use the last non-parameter part
         resourceName = pathParts.find(part => !part.includes('{')) || pathParts[0] || 'api';
       }
-      
+
       // Clean up resource name and get singular form
       resourceName = resourceName.replace(/[{}]/g, '');
       const singularResource = resourceName.endsWith('s') ? resourceName.slice(0, -1) : resourceName;
-      
+
       // Generate tool names based on method and path structure
       if (method === 'get' && !endpoint.path.includes('{')) {
         // GET /posts -> get_all_posts
@@ -293,16 +389,16 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
     return tools;
   };
 
-  // Regenerate nodes when custom methods change
+  // Regenerate nodes when custom methods or disabled endpoints change
   const [nodes, setNodes, onNodesChange] = useNodesState([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
-  // Update nodes when custom methods change
+  // Update nodes when custom methods, disabled endpoints, or selection changes
   React.useEffect(() => {
     const { nodes: newNodes, edges: newEdges } = generateInitialNodes();
     setNodes(newNodes);
     setEdges(newEdges);
-  }, [customMethods, endpoints]);
+  }, [customMethods, endpoints, disabledEndpoints, selectedEndpointId]);
 
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge(params, eds)),
@@ -310,6 +406,9 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
   );
 
   const handleGenerateCode = () => {
+    // Only include enabled endpoints
+    const enabledEndpoints = endpoints.filter(ep => !disabledEndpoints.has(ep.id));
+
     // Extract regular tools from endpoint mapping
     const regularTools = nodes
       .filter(node => node.data.type === 'tool')
@@ -357,7 +456,7 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
       edges,
       tools,
       resources,
-      endpoints,
+      endpoints: enabledEndpoints, // Only pass enabled endpoints
       apiInfo: {
         ...info,
         servers
@@ -368,7 +467,7 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
   const generateToolSchema = (tool: any) => {
     const properties: any = {};
     const required: string[] = [];
-    
+
     const endpoint = tool.endpoints[0];
     if (!endpoint) return { type: 'object', properties: {} };
 
@@ -378,16 +477,16 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
         type: param.type || 'string',
         description: param.description || `${param.name} parameter`
       };
-      
+
       if (param.example) {
         properties[param.name].example = param.example;
       }
-      
+
       // Add validation constraints
       if (param.type === 'integer') {
         properties[param.name].minimum = 1;
       }
-      
+
       if (param.required) {
         required.push(param.name);
       }
@@ -437,13 +536,53 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
   };
 
   const getExistingMethodNames = () => {
-    const endpointNames = groupEndpointsByFunction(endpoints).map(tool => tool.name);
+    const enabledEndpoints = endpoints.filter(ep => !disabledEndpoints.has(ep.id));
+    const endpointNames = groupEndpointsByFunction(enabledEndpoints).map(tool => tool.name);
     const customNames = customMethods.map(method => method.name);
     return [...endpointNames, ...customNames];
   };
 
+  // Get method counts for bulk operations
+  const getMethodCounts = () => {
+    const counts: Record<string, { total: number; enabled: number }> = {};
+
+    endpoints.forEach(ep => {
+      if (!counts[ep.method]) {
+        counts[ep.method] = { total: 0, enabled: 0 };
+      }
+      counts[ep.method].total++;
+      if (!disabledEndpoints.has(ep.id)) {
+        counts[ep.method].enabled++;
+      }
+    });
+
+    return counts;
+  };
+
+  const methodCounts = getMethodCounts();
+  const enabledCount = endpoints.length - disabledEndpoints.size;
+  const filteredEndpoints = getFilteredEndpoints();
+
   return (
     <div className="h-screen flex flex-col">
+      {/* Add CSS for highlight effect */}
+      <style jsx>{`
+        .highlight-endpoint {
+          animation: highlight-pulse 2s ease-in-out;
+          border-color: #3B82F6 !important;
+          box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3) !important;
+        }
+
+        @keyframes highlight-pulse {
+          0%, 100% {
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+          }
+          50% {
+            box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.5);
+          }
+        }
+      `}</style>
+
       {/* Compact Header */}
       <div className="bg-white border-b border-gray-200 px-4 py-3">
         <div className="flex items-center justify-between">
@@ -451,6 +590,9 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
             <h1 className="text-xl font-bold text-gray-900">Visual MCP Mapper</h1>
             <p className="text-sm text-gray-600">
               {info.title ? `Mapping ${info.title} API` : 'Map your API endpoints to MCP tools and resources'}
+              <span className="ml-2 text-blue-600 font-medium">
+                {enabledCount}/{endpoints.length} endpoints enabled
+              </span>
             </p>
           </div>
           <div className="flex items-center space-x-2">
@@ -463,20 +605,20 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
             </Button>
             <Button size="sm" onClick={handleGenerateCode}>
               <Code className="w-3 h-3 mr-1" />
-              Generate Code
+              Generate Code ({enabledCount} endpoints)
             </Button>
           </div>
         </div>
       </div>
 
       <div className="flex-1 flex">
-        {/* Collapsible Sidebar */}
+        {/* Enhanced Sidebar with Endpoint Management */}
         <div className={`bg-gray-50 border-r border-gray-200 flex flex-col transition-all duration-300 ${
-          sidebarCollapsed ? 'w-12' : 'w-64'
+          sidebarCollapsed ? 'w-12' : 'w-80'
         }`}>
           <div className="p-3 border-b border-gray-200 flex items-center justify-between">
             {!sidebarCollapsed && (
-              <h2 className="font-semibold text-gray-900 text-sm">API Information</h2>
+              <h2 className="font-semibold text-gray-900 text-sm">Endpoint Management</h2>
             )}
             <button
               onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -487,87 +629,192 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
           </div>
 
           {!sidebarCollapsed && (
-            <div className="flex-1 overflow-y-auto p-3 space-y-4">
-              {/* API Info */}
-              <div>
-                {info.title && (
-                  <div className="mb-2">
-                    <div className="text-xs font-medium text-gray-700">API Title</div>
-                    <div className="text-xs text-gray-600">{info.title}</div>
+            <div className="flex-1 overflow-y-auto">
+              {/* Endpoint Statistics */}
+              <div className="p-3 border-b border-gray-200 bg-white">
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="text-center p-2 bg-green-50 rounded">
+                    <div className="font-bold text-green-800">{enabledCount}</div>
+                    <div className="text-green-600">Enabled</div>
                   </div>
-                )}
-                {info.version && (
-                  <div className="mb-2">
-                    <div className="text-xs font-medium text-gray-700">Version</div>
-                    <div className="text-xs text-gray-600">{info.version}</div>
+                  <div className="text-center p-2 bg-gray-50 rounded">
+                    <div className="font-bold text-gray-800">{disabledEndpoints.size}</div>
+                    <div className="text-gray-600">Disabled</div>
                   </div>
-                )}
-                {info.description && (
-                  <div className="mb-2">
-                    <div className="text-xs font-medium text-gray-700">Description</div>
-                    <div className="text-xs text-gray-600 line-clamp-3">{info.description}</div>
-                  </div>
-                )}
+                </div>
               </div>
 
-              {/* Endpoints */}
-              <div>
-                <h3 className="font-semibold text-gray-900 mb-2 text-sm">Endpoints ({endpoints.length})</h3>
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {endpoints.map((endpoint, index) => (
-                    <motion.div
-                      key={endpoint.id}
-                      initial={{ opacity: 0, x: -20 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: index * 0.02 }}
-                      className="p-2 bg-white rounded-lg border border-gray-200 text-xs"
+              {/* Bulk Operations */}
+              <div className="p-3 border-b border-gray-200 bg-white">
+                <h3 className="font-medium text-gray-900 mb-2 text-sm">Bulk Operations</h3>
+                <div className="space-y-2">
+                  <div className="flex space-x-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={enableAllEndpoints}
+                      className="flex-1 text-xs"
                     >
-                      <div className="flex items-center space-x-2 mb-1">
-                        <span className={`px-1 py-0.5 text-xs font-medium rounded ${
-                          endpoint.method === 'GET' ? 'bg-blue-100 text-blue-800' :
-                          endpoint.method === 'POST' ? 'bg-green-100 text-green-800' :
-                          endpoint.method === 'PUT' ? 'bg-yellow-100 text-yellow-800' :
-                          endpoint.method === 'DELETE' ? 'bg-red-100 text-red-800' :
-                          'bg-purple-100 text-purple-800'
-                        }`}>
-                          {endpoint.method}
-                        </span>
-                      </div>
-                      <div className="font-medium text-gray-900 mb-1 line-clamp-1">{endpoint.path}</div>
-                      <div className="text-gray-600 line-clamp-2">{endpoint.description}</div>
-                      {endpoint.parameters.length > 0 && (
-                        <div className="text-gray-500 mt-1">
-                          {endpoint.parameters.length} param{endpoint.parameters.length !== 1 ? 's' : ''}
+                      <CheckCircle2 className="w-3 h-3 mr-1" />
+                      Enable All
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={disableAllEndpoints}
+                      className="flex-1 text-xs"
+                    >
+                      <XCircle className="w-3 h-3 mr-1" />
+                      Disable All
+                    </Button>
+                  </div>
+
+                  {/* Method-based toggles */}
+                  <div className="space-y-1">
+                    {Object.entries(methodCounts).map(([method, counts]) => (
+                      <button
+                        key={method}
+                        onClick={() => toggleByMethod(method)}
+                        className="w-full flex items-center justify-between p-2 text-xs rounded hover:bg-gray-100 transition-colors"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                            method === 'GET' ? 'bg-blue-100 text-blue-800' :
+                            method === 'POST' ? 'bg-green-100 text-green-800' :
+                            method === 'PUT' ? 'bg-yellow-100 text-yellow-800' :
+                            method === 'DELETE' ? 'bg-red-100 text-red-800' :
+                            'bg-purple-100 text-purple-800'
+                          }`}>
+                            {method}
+                          </span>
+                          <span className="text-gray-600">
+                            {counts.enabled}/{counts.total}
+                          </span>
                         </div>
-                      )}
-                    </motion.div>
+                        {counts.enabled === counts.total ? (
+                          <ToggleRight className="w-4 h-4 text-green-600" />
+                        ) : counts.enabled === 0 ? (
+                          <ToggleLeft className="w-4 h-4 text-gray-400" />
+                        ) : (
+                          <ToggleRight className="w-4 h-4 text-yellow-600" />
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Filter Controls */}
+              <div className="p-3 border-b border-gray-200 bg-white">
+                <h3 className="font-medium text-gray-900 mb-2 text-sm">Filter View</h3>
+                <div className="flex rounded-lg bg-gray-100 p-1">
+                  {[
+                    { id: 'all', label: 'All', count: endpoints.length },
+                    { id: 'enabled', label: 'Enabled', count: enabledCount },
+                    { id: 'disabled', label: 'Disabled', count: disabledEndpoints.size }
+                  ].map((filter) => (
+                    <button
+                      key={filter.id}
+                      onClick={() => setFilterMethod(filter.id as any)}
+                      className={`flex-1 px-2 py-1 rounded text-xs font-medium transition-colors ${
+                        filterMethod === filter.id
+                          ? 'bg-white text-gray-900 shadow-sm'
+                          : 'text-gray-600 hover:text-gray-900'
+                      }`}
+                    >
+                      {filter.label} ({filter.count})
+                    </button>
                   ))}
                 </div>
               </div>
 
-              {/* MCP Components */}
-              <div>
-                <h3 className="font-semibold text-gray-900 mb-2 text-sm">MCP Components</h3>
-                <div className="space-y-2">
-                  <div className="p-2 bg-purple-50 border border-purple-200 rounded-lg">
-                    <div className="flex items-center space-x-2 mb-1">
-                      <Zap className="w-3 h-3 text-purple-600" />
-                      <span className="font-medium text-purple-900 text-xs">Tools</span>
-                    </div>
-                    <p className="text-xs text-purple-700">Functions that Claude can call</p>
-                  </div>
-                  <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-lg">
-                    <div className="flex items-center space-x-2 mb-1">
-                      <Database className="w-3 h-3 text-emerald-600" />
-                      <span className="font-medium text-emerald-900 text-xs">Resources</span>
-                    </div>
-                    <p className="text-xs text-emerald-700">Data that Claude can read</p>
-                  </div>
+              {/* Endpoints List */}
+              <div className="p-3 space-y-2">
+                <h3 className="font-medium text-gray-900 mb-2 text-sm">
+                  Endpoints ({filteredEndpoints.length})
+                  {selectedEndpointId && (
+                    <span className="ml-2 text-xs text-blue-600">
+                      • Click endpoint blocks in the diagram to select them
+                    </span>
+                  )}
+                </h3>
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {filteredEndpoints.map((endpoint) => {
+                    const isEnabled = !disabledEndpoints.has(endpoint.id);
+                    const isSelected = selectedEndpointId === endpoint.id;
+
+                    return (
+                      <motion.div
+                        key={endpoint.id}
+                        id={`endpoint-${endpoint.id}`}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        className={`p-3 rounded-lg border transition-all duration-200 cursor-pointer ${
+                          isSelected
+                            ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                            : isEnabled
+                            ? 'bg-white border-gray-200 hover:border-blue-300'
+                            : 'bg-gray-50 border-gray-200 opacity-60'
+                        }`}
+                        onClick={() => handleEndpointSelect(endpoint.id)}
+                      >
+                        <div className="flex items-start justify-between">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center space-x-2 mb-1">
+                              <span className={`px-2 py-0.5 text-xs font-medium rounded ${
+                                endpoint.method === 'GET' ? 'bg-blue-100 text-blue-800' :
+                                endpoint.method === 'POST' ? 'bg-green-100 text-green-800' :
+                                endpoint.method === 'PUT' ? 'bg-yellow-100 text-yellow-800' :
+                                endpoint.method === 'DELETE' ? 'bg-red-100 text-red-800' :
+                                'bg-purple-100 text-purple-800'
+                              }`}>
+                                {endpoint.method}
+                              </span>
+                              {endpoint.parameters.length > 0 && (
+                                <span className="text-xs text-gray-500">
+                                  {endpoint.parameters.length} params
+                                </span>
+                              )}
+                              {isSelected && (
+                                <span className="text-xs bg-blue-100 text-blue-800 px-1 rounded">
+                                  Selected
+                                </span>
+                              )}
+                            </div>
+                            <div className="font-medium text-gray-900 text-sm mb-1 truncate">
+                              {endpoint.path}
+                            </div>
+                            <div className="text-xs text-gray-600 line-clamp-2">
+                              {endpoint.description}
+                            </div>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleEndpoint(endpoint.id);
+                            }}
+                            className={`ml-2 p-1 rounded transition-colors ${
+                              isEnabled
+                                ? 'text-green-600 hover:bg-green-100'
+                                : 'text-gray-400 hover:bg-gray-200'
+                            }`}
+                            title={isEnabled ? 'Disable endpoint' : 'Enable endpoint'}
+                          >
+                            {isEnabled ? (
+                              <ToggleRight className="w-5 h-5" />
+                            ) : (
+                              <ToggleLeft className="w-5 h-5" />
+                            )}
+                          </button>
+                        </div>
+                      </motion.div>
+                    );
+                  })}
                 </div>
               </div>
 
-              {/* Custom Methods */}
-              <div>
+              {/* Custom Methods Section */}
+              <div className="p-3 border-t border-gray-200">
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="font-semibold text-gray-900 text-sm">Custom Methods ({customMethods.length})</h3>
                   <Button
@@ -580,7 +827,7 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
                     Add
                   </Button>
                 </div>
-                
+
                 {customMethods.length === 0 ? (
                   <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
                     <div className="text-xs text-orange-700 mb-2">
@@ -625,21 +872,6 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
                   </div>
                 )}
               </div>
-
-              {/* Quick Actions */}
-              <div>
-                <h3 className="font-semibold text-gray-900 mb-2 text-sm">Quick Actions</h3>
-                <div className="space-y-2">
-                  <Button variant="outline" size="sm" className="w-full justify-start text-xs">
-                    <Settings className="w-3 h-3 mr-1" />
-                    Authentication
-                  </Button>
-                  <Button variant="outline" size="sm" className="w-full justify-start text-xs">
-                    <Play className="w-3 h-3 mr-1" />
-                    Test Mapping
-                  </Button>
-                </div>
-              </div>
             </div>
           )}
         </div>
@@ -657,24 +889,33 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
           >
             <Background />
             <Controls />
-            <MiniMap 
+            <MiniMap
               nodeColor={(node) => {
                 if (node.data.type === 'tool') return '#8B5CF6';
                 if (node.data.type === 'resource') return '#10B981';
+                if (node.data.isSelected) return '#3B82F6';
                 return '#3B82F6';
               }}
               maskColor="rgb(240, 240, 240, 0.6)"
             />
             <Panel position="top-right">
-              <Card className="w-48">
+              <Card className="w-56">
                 <CardHeader className="pb-2">
                   <h3 className="font-semibold text-sm">Mapping Stats</h3>
                 </CardHeader>
                 <CardContent className="pt-0">
-                  <div className="space-y-1 text-xs">
+                  <div className="space-y-2 text-xs">
                     <div className="flex justify-between">
-                      <span className="text-gray-600">API Endpoints:</span>
+                      <span className="text-gray-600">Total Endpoints:</span>
                       <span className="font-medium">{endpoints.length}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Enabled Endpoints:</span>
+                      <span className="font-medium text-green-600">{enabledCount}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Disabled Endpoints:</span>
+                      <span className="font-medium text-gray-500">{disabledEndpoints.size}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-600">MCP Tools:</span>
@@ -688,6 +929,17 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
                         {nodes.filter(n => n.data.type === 'resource').length}
                       </span>
                     </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Custom Methods:</span>
+                      <span className="font-medium text-orange-600">{customMethods.length}</span>
+                    </div>
+                    {selectedEndpointId && (
+                      <div className="pt-2 border-t border-gray-200">
+                        <div className="text-xs text-blue-600 font-medium">
+                          💡 Click endpoint blocks to select them in the sidebar
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -705,6 +957,9 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
           >
             <div className="p-3 border-b border-gray-700">
               <h3 className="font-semibold text-sm">Generated Code Preview</h3>
+              <p className="text-xs text-gray-400 mt-1">
+                Based on {enabledCount} enabled endpoints
+              </p>
             </div>
             <div className="p-3 font-mono text-xs">
               <pre className="text-green-400">
@@ -714,14 +969,15 @@ from mcp.types import Tool, Resource
 
 server = Server("${(info.title || 'api').toLowerCase().replace(/\s+/g, '-')}-server")
 
-# Generated from ${endpoints.length} API endpoints
+# Generated from ${enabledCount} enabled endpoints
 # Tools: ${nodes.filter(n => n.data.type === 'tool').length}
 # Resources: ${nodes.filter(n => n.data.type === 'resource').length}
+# Custom Methods: ${customMethods.length}
 
 @server.list_tools()
 async def list_tools():
     return [
-        # Auto-generated tools based on your API
+        # Auto-generated tools based on enabled endpoints
         ${nodes.filter(n => n.data.type === 'tool').map(n => 
           `Tool(name="${n.data.group.name.toLowerCase().replace(/\s+/g, '_')}", description="${n.data.group.description}")`
         ).join(',\n        ')}
