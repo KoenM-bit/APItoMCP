@@ -113,6 +113,16 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
     };
   }, []);
 
+  // Clear tool parameters when switching tools
+  useEffect(() => {
+    if (selectedTool) {
+      console.log('🔄 Tool changed to:', selectedTool.name, '- clearing previous parameters');
+      addDebugLog('info', `Switched to ${selectedTool.name} - parameters cleared`);
+      setToolParameters({});
+      setLastTestResult(null); // Also clear previous results for clarity
+    }
+  }, [selectedTool]);
+
   const addDebugLog = (level: 'info' | 'warn' | 'error', message: string, data?: any) => {
     const log = {
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
@@ -127,6 +137,20 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
   const addTerminalOutput = (output: string) => {
     const timestamp = new Date().toLocaleTimeString();
     setTerminalOutput(prev => [...prev, `[${timestamp}] ${output}`].slice(-50));
+  };
+
+  const handleToolSelection = (tool: any) => {
+    console.log('🔄 Selecting new tool:', tool.name);
+
+    // Only clear if actually switching to a different tool
+    if (!selectedTool || selectedTool.name !== tool.name) {
+      console.log('🧹 Clearing parameters for new tool');
+      addDebugLog('info', `Switched to ${tool.name} - parameters cleared`);
+      setToolParameters({});
+      setLastTestResult(null);
+    }
+
+    setSelectedTool(tool);
   };
 
   const handleStartServer = async () => {
@@ -144,19 +168,19 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
       addDebugLog('info', 'Creating MCP project files');
       addTerminalOutput('Creating MCP project files...');
       await webContainer.createMCPProject(language, generatedCode);
-      
+
       setInitializationProgress('Installing dependencies...');
       addTerminalOutput('Installing dependencies...');
-      
+
       // Start the server
       setInitializationProgress('Starting MCP server...');
       addTerminalOutput('Starting MCP server...');
       const url = await webContainer.startMCPServer(language);
-      
+
       setServerUrl(url);
       setServerStatus('running');
       setInitializationProgress('Server running');
-      
+
       addDebugLog('info', 'MCP server started successfully', { url, language });
       addTerminalOutput(`MCP server started successfully at ${url}`);
 
@@ -172,7 +196,7 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
 
       // Start performance monitoring
       startPerformanceMonitoring();
-      
+
     } catch (error) {
       console.error('Failed to start server:', error);
       setServerStatus('error');
@@ -193,15 +217,15 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
       setServerStatus('stopped');
       setServerUrl('');
       setInitializationProgress('Server stopped');
-      
+
       if (performanceInterval.current) {
         clearInterval(performanceInterval.current);
         performanceInterval.current = null;
       }
-      
+
       addDebugLog('info', 'MCP server stopped successfully');
       addTerminalOutput('MCP server stopped successfully');
-      
+
     } catch (error) {
       console.error('Failed to stop server:', error);
       addDebugLog('error', 'Failed to stop MCP server', error);
@@ -335,7 +359,7 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
 
       addDebugLog('info', 'MCP initialization successful', result);
       addTerminalOutput('MCP initialization: SUCCESS');
-      
+
     } catch (error) {
       addDebugLog('error', 'MCP initialization failed', error);
       addTerminalOutput(`MCP initialization failed: ${error.message}`);
@@ -344,7 +368,7 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
 
   const renderParameterInput = (param: any) => {
     const value = toolParameters[param.name] || '';
-    
+
     switch (param.type) {
       case 'string':
         return (
@@ -440,7 +464,7 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
 
             {/* Compact Server Controls */}
             {serverStatus === 'stopped' || serverStatus === 'error' ? (
-              <Button 
+              <Button
                 onClick={handleStartServer}
                 disabled={!webContainer || isRunning}
                 size="sm"
@@ -459,7 +483,7 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
               </Button>
             ) : (
               <div className="flex items-center space-x-2">
-                <Button 
+                <Button
                   onClick={handleInitializeMCP}
                   variant="outline"
                   size="sm"
@@ -467,7 +491,7 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
                   <Zap className="w-3 h-3 mr-1" />
                   Init MCP
                 </Button>
-                <Button 
+                <Button
                   onClick={handleStopServer}
                   variant="outline"
                   size="sm"
@@ -518,7 +542,7 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
                             ? 'border-blue-500 bg-blue-50'
                             : 'border-gray-200 hover:border-gray-300 bg-white'
                         }`}
-                        onClick={() => setSelectedTool(tool)}
+                        onClick={() => handleToolSelection(tool)}
                       >
                         <div className="flex items-center space-x-2 mb-1">
                           <Zap className="w-3 h-3 text-purple-600" />

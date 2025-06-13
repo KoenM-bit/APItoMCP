@@ -282,9 +282,10 @@ class PythonMCPParser {
     const methodMatch = handlerCode.match(methodPattern);
     const method = methodMatch ? methodMatch[1].toUpperCase() : 'GET';
 
-    const pathPattern = /client\\.\\w+\\s*\\(\\s*["']([^"']+)["']/;
+    // Enhanced pattern that handles f-strings, regular strings, and variables
+    const pathPattern = /client\\.\\w+\\s*\\(\\s*(?:f["']([^"']+)["']|["']([^"']+)["']|([^,)]+))/;
     const pathMatch = handlerCode.match(pathPattern);
-    let path = pathMatch ? pathMatch[1] : '/';
+    let path = pathMatch ? (pathMatch[1] || pathMatch[2] || pathMatch[3] || '/').replace(/['"]/g, '') : '/';
 
     const pathParamPattern = /(\\w+)\\s*=\\s*arguments\\s*\\[\\s*["'](\\w+)["']\\s*\\]/g;
     const pathParams = [];

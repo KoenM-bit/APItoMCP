@@ -13,7 +13,7 @@ import ReactFlow, {
 } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { motion } from 'framer-motion';
-import { 
+import {
   Zap, 
   Database, 
   Settings, 
@@ -22,10 +22,15 @@ import {
   Eye,
   Download,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Plus,
+  Wand2,
+  X
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Card, CardContent, CardHeader } from '../ui/Card';
+import { CustomMethodModal } from './CustomMethodModal';
+import { CustomMethod } from '../../types';
 
 interface VisualMapperProps {
   endpoints: any[];
@@ -44,6 +49,8 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
 }) => {
   const [showPreview, setShowPreview] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [customMethods, setCustomMethods] = useState<CustomMethod[]>([]);
+  const [showCustomMethodModal, setShowCustomMethodModal] = useState(false);
 
   // Generate initial nodes from real API endpoints
   const generateInitialNodes = () => {
@@ -120,6 +127,34 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
         target: toolId,
         type: 'smoothstep',
         style: { stroke: '#8B5CF6', strokeWidth: 2 }
+      });
+    });
+
+    // Add custom method nodes
+    customMethods.forEach((customMethod, index) => {
+      const customToolId = `custom-tool-${index}`;
+      
+      nodes.push({
+        id: customToolId,
+        data: { 
+          label: (
+            <div className="p-3 bg-white border-2 border-orange-300 rounded-lg shadow-sm min-w-[200px]">
+              <div className="flex items-center space-x-2 mb-2">
+                <Wand2 className="w-3 h-3 text-orange-600" />
+                <span className="font-semibold text-orange-900 text-sm">{customMethod.name}</span>
+                <span className="px-1 py-0.5 text-xs bg-orange-100 text-orange-700 rounded">Custom</span>
+              </div>
+              <div className="text-xs text-gray-600 mb-2 line-clamp-2">{customMethod.description}</div>
+              <div className="text-xs text-gray-500">
+                {customMethod.method} {customMethod.path || 'Custom implementation'}
+              </div>
+            </div>
+          ),
+          type: 'custom-tool',
+          customMethod: customMethod
+        },
+        position: { x: 400, y: 80 + ((tools.length + index) * 100) },
+        style: { border: 'none', background: 'transparent' }
       });
     });
 
@@ -258,9 +293,16 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
     return tools;
   };
 
-  const { nodes: initialNodes, edges: initialEdges } = generateInitialNodes();
-  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  // Regenerate nodes when custom methods change
+  const [nodes, setNodes, onNodesChange] = useNodesState([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+
+  // Update nodes when custom methods change
+  React.useEffect(() => {
+    const { nodes: newNodes, edges: newEdges } = generateInitialNodes();
+    setNodes(newNodes);
+    setEdges(newEdges);
+  }, [customMethods, endpoints]);
 
   const onConnect = useCallback(
     (params: Connection) => setEdges((eds) => addEdge(params, eds)),
@@ -268,16 +310,34 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
   );
 
   const handleGenerateCode = () => {
-    // Extract tools and resources from the current mapping
-    const tools = nodes
+    // Extract regular tools from endpoint mapping
+    const regularTools = nodes
       .filter(node => node.data.type === 'tool')
       .map(node => ({
         name: node.data.group.name,
         description: node.data.group.description,
         endpoints: node.data.group.endpoints,
         resourceName: node.data.group.resourceName,
-        inputSchema: generateToolSchema(node.data.group)
+        inputSchema: generateToolSchema(node.data.group),
+        isCustom: false
       }));
+
+    // Extract custom tools
+    const customTools = nodes
+      .filter(node => node.data.type === 'custom-tool')
+      .map(node => ({
+        name: node.data.customMethod.name,
+        description: node.data.customMethod.description,
+        endpoints: [],
+        resourceName: node.data.customMethod.name,
+        inputSchema: node.data.customMethod.inputSchema,
+        isCustom: true,
+        customImplementation: node.data.customMethod.implementation,
+        customMethod: node.data.customMethod.method,
+        customPath: node.data.customMethod.path
+      }));
+
+    const tools = [...regularTools, ...customTools];
 
     const resources = nodes
       .filter(node => node.data.type === 'resource')
@@ -366,6 +426,20 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
       properties,
       required: required.length > 0 ? required : undefined
     };
+  };
+
+  const handleAddCustomMethod = (customMethod: CustomMethod) => {
+    setCustomMethods(prev => [...prev, customMethod]);
+  };
+
+  const handleRemoveCustomMethod = (methodId: string) => {
+    setCustomMethods(prev => prev.filter(m => m.id !== methodId));
+  };
+
+  const getExistingMethodNames = () => {
+    const endpointNames = groupEndpointsByFunction(endpoints).map(tool => tool.name);
+    const customNames = customMethods.map(method => method.name);
+    return [...endpointNames, ...customNames];
   };
 
   return (
@@ -492,6 +566,66 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
                 </div>
               </div>
 
+              {/* Custom Methods */}
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="font-semibold text-gray-900 text-sm">Custom Methods ({customMethods.length})</h3>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowCustomMethodModal(true)}
+                    className="text-xs"
+                  >
+                    <Plus className="w-3 h-3 mr-1" />
+                    Add
+                  </Button>
+                </div>
+                
+                {customMethods.length === 0 ? (
+                  <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                    <div className="text-xs text-orange-700 mb-2">
+                      Add custom methods to extend your API functionality beyond standard endpoints.
+                    </div>
+                    <Button
+                      size="sm"
+                      onClick={() => setShowCustomMethodModal(true)}
+                      className="text-xs"
+                    >
+                      <Wand2 className="w-3 h-3 mr-1" />
+                      Create Custom Method
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-2 max-h-32 overflow-y-auto">
+                    {customMethods.map((method) => (
+                      <motion.div
+                        key={method.id}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        className="p-2 bg-orange-50 border border-orange-200 rounded-lg text-xs"
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center space-x-1">
+                            <Wand2 className="w-3 h-3 text-orange-600" />
+                            <span className="font-medium text-orange-900">{method.name}</span>
+                          </div>
+                          <button
+                            onClick={() => handleRemoveCustomMethod(method.id)}
+                            className="text-orange-600 hover:text-orange-800"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                        <div className="text-orange-700 line-clamp-2 mb-1">{method.description}</div>
+                        <div className="text-orange-600">
+                          {method.method} {method.path || 'Custom implementation'}
+                        </div>
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {/* Quick Actions */}
               <div>
                 <h3 className="font-semibold text-gray-900 mb-2 text-sm">Quick Actions</h3>
@@ -597,6 +731,14 @@ async def list_tools():
           </motion.div>
         )}
       </div>
+
+      {/* Custom Method Modal */}
+      <CustomMethodModal
+        isOpen={showCustomMethodModal}
+        onClose={() => setShowCustomMethodModal(false)}
+        onSave={handleAddCustomMethod}
+        existingMethods={getExistingMethodNames()}
+      />
     </div>
   );
 };

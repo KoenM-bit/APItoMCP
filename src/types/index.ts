@@ -38,6 +38,19 @@ export interface MCPTool {
   inputSchema: any;
   mappedEndpoints: string[];
   transformations?: any;
+  isCustom?: boolean;
+  customImplementation?: string;
+}
+
+export interface CustomMethod {
+  id: string;
+  name: string;
+  description: string;
+  inputSchema: any;
+  implementation: string;
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+  path?: string;
+  createdAt: Date;
 }
 
 export interface MCPResource {
