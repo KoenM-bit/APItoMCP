@@ -1,29 +1,23 @@
 /**
- * Enhanced MCP Integration with Context-Aware Chained Prompting
- * This replaces the existing HuggingFaceMCPIntegration with a sophisticated system
+ * Enhanced MCP Integration - Complete Fixed Version
+ * This file should completely replace your existing enhancedMCPIntegration.ts
  */
 
 import { MCPClientSession } from './mcpClient';
-import { ContextStore, ConversationContext } from './contextStore';
-import { PromptChainOrchestrator } from './promptChainOrchestrator';
-import { ResponseSynthesisEngine, SynthesisConfig } from './responseSynthesisEngine';
 
+// Simplified interfaces - no complex dependencies
 export interface EnhancedMCPConfig {
-  llmProvider: 'huggingface' | 'openai' | 'anthropic';
-  apiKey: string;
-  modelId: string;
-  synthesisConfig?: Partial<SynthesisConfig>;
-  enableChaining: boolean;
-  enableContextManagement: boolean;
-  maxResponseTime: number;
+  llmProvider?: 'huggingface' | 'openai' | 'anthropic';
+  apiKey?: string;
+  modelId?: string;
+  maxResponseTime?: number;
 }
 
 export interface ProcessingResult {
   response: string;
   confidence: number;
   processingTime: number;
-  chainsUsed: number;
-  contextUsed: boolean;
+  toolsUsed: string[];
   metadata: ProcessingMetadata;
 }
 
@@ -31,758 +25,543 @@ export interface ProcessingMetadata {
   mcpToolsCalled: string[];
   reasoningSteps: string[];
   sourcesUsed: string[];
-  contradictionsResolved: number;
   userPersonalization: boolean;
+  queryType: 'new_request' | 'clarification' | 'follow_up';
+}
+
+// Simple conversation history interface
+interface ConversationMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: Date;
 }
 
 export class EnhancedMCPIntegration {
   private mcpClient: MCPClientSession;
-  private contextStore: ContextStore;
-  private chainOrchestrator: PromptChainOrchestrator;
-  private synthesisEngine: ResponseSynthesisEngine;
   private config: EnhancedMCPConfig;
   private sessionId: string;
+  private lastToolResult: any = null;
+  private lastQuery: string = '';
+  private conversationHistory: ConversationMessage[] = [];
 
   constructor(
-    mcpClient: MCPClientSession, 
-    config: EnhancedMCPConfig,
+    mcpClient: MCPClientSession,
+    config: EnhancedMCPConfig = {},
     sessionId: string = 'default'
   ) {
     this.mcpClient = mcpClient;
-    this.config = config;
+    this.config = {
+      maxResponseTime: 30000,
+      ...config
+    };
     this.sessionId = sessionId;
-    
-    // Initialize core components
-    this.contextStore = new ContextStore();
-    this.chainOrchestrator = new PromptChainOrchestrator(this.contextStore, this.mcpClient);
-    this.synthesisEngine = new ResponseSynthesisEngine();
-    
-    // Initialize session context
-    this.initializeSession();
-  }
 
-  private async initializeSession(): Promise<void> {
-    try {
-      await this.contextStore.createContext(this.sessionId, {
-        responseStyle: 'conversational',
-        preferences: { enhancedProcessing: true }
-      });
-    } catch (error) {
-      // Session might already exist
-      console.log('Session already initialized or error:', error);
-    }
+    console.log('✅ Enhanced MCP Integration initialized successfully');
   }
 
   /**
-   * Main entry point for processing user queries with context-aware chained prompting
+   * Main entry point - simplified and reliable
    */
   async processQuery(
-    userMessage: string, 
+    userMessage: string,
     conversationHistory: any[] = []
   ): Promise<string> {
     const startTime = Date.now();
-    
+
     try {
-      // Add user message to context store
-      await this.contextStore.addMessage(this.sessionId, {
+      console.log('🔍 Processing query:', userMessage);
+
+      // Add to conversation history
+      this.conversationHistory.push({
         role: 'user',
         content: userMessage,
-        timestamp: new Date(),
-        metadata: {}
+        timestamp: new Date()
       });
 
-      // Determine query complexity
-      const complexity = this.analyzeQueryComplexity(userMessage);
-      
-      // Process based on configuration
-      let finalResponse: string;
-      
-      if (this.config.enableChaining && complexity !== 'simple') {
-        // Use sophisticated chained prompting
-        finalResponse = await this.processWithChaining(userMessage, complexity);
-      } else {
-        // Use direct processing with context awareness
-        finalResponse = await this.processDirectly(userMessage);
+      // Analyze query intent
+      const queryAnalysis = this.analyzeQueryIntent(userMessage);
+      console.log('🎯 Query analysis:', queryAnalysis);
+
+      let response: string;
+
+      // Route based on intent
+      switch (queryAnalysis.type) {
+        case 'new_mcp_request':
+          response = await this.handleNewMCPRequest(userMessage, queryAnalysis);
+          break;
+
+        case 'clarification_about_last_result':
+          response = await this.handleClarificationRequest(userMessage, queryAnalysis);
+          break;
+
+        case 'general_conversation':
+          response = await this.handleGeneralConversation(userMessage);
+          break;
+
+        default:
+          response = await this.handleNewMCPRequest(userMessage, queryAnalysis);
       }
-      
-      // If we have an API key and the response seems to be raw MCP data, process it through LLM
-      if (this.config.apiKey && this.looksLikeRawData(finalResponse)) {
-        console.log('🧠 Post-processing raw MCP response through LLM...');
-        finalResponse = await this.postProcessWithLLM(userMessage, finalResponse);
-      }
-      
-      // Add assistant response to context
-      await this.contextStore.addMessage(this.sessionId, {
+
+      // Add response to history
+      this.conversationHistory.push({
         role: 'assistant',
-        content: finalResponse,
-        timestamp: new Date(),
-        metadata: {
-          processingTime: Date.now() - startTime
-        }
+        content: response,
+        timestamp: new Date()
       });
-      
-      return finalResponse;
-      
+
+      // Keep history manageable
+      if (this.conversationHistory.length > 20) {
+        this.conversationHistory = this.conversationHistory.slice(-20);
+      }
+
+      console.log('✅ Query processed successfully');
+      return response;
+
     } catch (error) {
-      console.error('Enhanced MCP processing failed:', error);
+      console.error('❌ Enhanced MCP processing failed:', error);
       return this.createFallbackResponse(userMessage, error);
     }
   }
 
-  private analyzeQueryComplexity(query: string): 'simple' | 'medium' | 'complex' {
-    const lowerQuery = query.toLowerCase();
-    
-    // For now, let's use direct processing for better reliability
-    // Complex chaining will be enabled later once the basic flow works
-    return 'simple';
-    
-    // Complex indicators (disabled for now)
-    // const complexIndicators = [
-    //   'analyze', 'compare', 'explain how', 'what are the differences',
-    //   'step by step', 'multiple', 'various', 'comprehensive',
-    //   'detailed analysis', 'in depth'
-    // ];
-    
-    // Medium indicators (disabled for now)
-    // const mediumIndicators = [
-    //   'how to', 'what is', 'can you', 'show me', 'get me',
-    //   'create', 'generate', 'find', 'search'
-    // ];
-  }
+  /**
+   * Analyze query intent without complex dependencies
+   */
+  private analyzeQueryIntent(query: string): {
+    type: 'new_mcp_request' | 'clarification_about_last_result' | 'general_conversation';
+    confidence: number;
+    mcpIndicators: string[];
+    clarificationIndicators: string[];
+    extractedParameters: Record<string, any>;
+  } {
+    const lowerQuery = query.toLowerCase().trim();
 
-  private async processWithChaining(
-    query: string, 
-    complexity: 'medium' | 'complex'
-  ): Promise<string> {
-    console.log(`🔗 Processing with chained prompting (${complexity} complexity)`);
-    
-    // Use the orchestrator to handle the complex query
-    const response = await this.chainOrchestrator.orchestrateQuery(
-      this.sessionId,
-      query,
-      complexity
-    );
-    
-    return response;
-  }
-
-  private async processDirectly(query: string): Promise<string> {
-    console.log('⚡ Processing with direct context-aware response');
-    
-    // Get relevant context
-    const contextResult = await this.contextStore.retrieveRelevantContext(
-      this.sessionId,
-      query,
-      3
-    );
-    
-    // Check if MCP tools are needed
-    const needsMCP = this.queryNeedsMCPTools(query);
-    
-    if (needsMCP) {
-      return await this.processWithMCPTools(query, contextResult);
-    } else {
-      return await this.processWithLLMOnly(query, contextResult);
-    }
-  }
-
-  private queryNeedsMCPTools(query: string): boolean {
-    const mcpKeywords = [
-      'get', 'fetch', 'retrieve', 'show', 'list', 'find',
-      'create', 'post', 'add', 'update', 'modify',
-      'delete', 'remove', 'call', 'api', 'data'
+    // MCP request indicators
+    const mcpIndicators = [
+      'get', 'fetch', 'retrieve', 'show me', 'find', 'list',
+      'create', 'post', 'add', 'update', 'modify', 'delete',
+      'call', 'api', 'tool', 'use the', 'try the'
     ];
-    
-    const lowerQuery = query.toLowerCase();
-    return mcpKeywords.some(keyword => lowerQuery.includes(keyword));
-  }
 
-  private async processWithMCPTools(query: string, contextResult: any): Promise<string> {
-    try {
-      // Discover available tools
-      const tools = await this.mcpClient.listTools();
-      
-      if (tools.length === 0) {
-        return "I'm connected to the MCP server, but no tools are currently available. Please ensure the server has been properly initialized with tools.";
-      }
-      
-      // Select appropriate tool based on query
-      const selectedTool = this.selectBestTool(query, tools);
-      
-      if (!selectedTool) {
-        const toolsList = tools.map(t => `• ${t.name}: ${t.description}`).join('\n');
-        return `I couldn't find a specific tool for your request. Here are the available tools:\n\n${toolsList}\n\nPlease specify which tool you'd like me to use or rephrase your request.`;
-      }
-      
-      // Prepare tool arguments
-      const toolArgs = this.prepareToolArguments(query, selectedTool);
-      
-      // Call the tool
-      console.log(`🔧 Calling MCP tool: ${selectedTool.name}`);
-      const toolResult = await this.mcpClient.callTool(selectedTool.name, toolArgs);
-      
-      // Process and synthesize the result
-      return await this.synthesizeToolResult(query, selectedTool, toolResult, contextResult);
-      
-    } catch (error) {
-      console.error('MCP tool processing failed:', error);
-      return `I encountered an error while using the MCP tools: ${error.message}. Please try rephrasing your request or check if the MCP server is properly configured.`;
-    }
-  }
-
-  private selectBestTool(query: string, tools: any[]): any | null {
-    const lowerQuery = query.toLowerCase();
-    
-    // Score each tool based on relevance
-    const scoredTools = tools.map(tool => {
-      let score = 0;
-      const toolName = tool.name.toLowerCase();
-      const toolDesc = tool.description.toLowerCase();
-      
-      // Direct name matching
-      if (lowerQuery.includes(toolName.replace(/_/g, ' '))) {
-        score += 10;
-      }
-      
-      // Action matching
-      if (lowerQuery.includes('get') && toolName.includes('get')) score += 8;
-      if (lowerQuery.includes('create') && toolName.includes('create')) score += 8;
-      if (lowerQuery.includes('post') && toolName.includes('post')) score += 8;
-      if (lowerQuery.includes('user') && toolName.includes('user')) score += 6;
-      if (lowerQuery.includes('comment') && toolName.includes('comment')) score += 6;
-      
-      // Special handling for search/count queries
-      if ((lowerQuery.includes('how many') || lowerQuery.includes('count') || lowerQuery.includes('check')) 
-          && (lowerQuery.includes('post') || lowerQuery.includes('comment'))) {
-        
-        // Prefer tools that get ALL posts/comments, not specific ones
-        if (toolName.includes('get') && toolName.includes('all') && toolName.includes('post')) {
-          score += 20; // Highest priority for get all posts
-        } else if (toolName.includes('get') && toolName.includes('post') && !toolName.includes('comment')) {
-          score += 15; // High priority for get posts (but not specific post comments)
-        } else if (toolName.includes('get') && toolName.includes('all') && toolName.includes('comment')) {
-          score += 18; // High priority for get all comments
-        } else if (toolName.includes('get') && toolName.includes('comment') && !toolName.includes('post')) {
-          score += 12; // Medium priority for get comments
-        }
-        
-        // Lower score for tools that need specific IDs (like get post comments)
-        if (toolName.includes('get') && toolName.includes('post') && toolName.includes('comment')) {
-          score -= 5; // This is probably get_post_comments which needs an ID
-        }
-      }
-      
-      // Description matching
-      const queryWords = lowerQuery.split(/\s+/);
-      queryWords.forEach(word => {
-        if (word.length > 3 && toolDesc.includes(word)) {
-          score += 2;
-        }
-      });
-      
-      return { tool, score };
-    });
-    
-    // Log scoring for debugging
-    console.log('🎯 Tool scoring for query:', query);
-    scoredTools.forEach(({ tool, score }) => {
-      console.log(`  ${tool.name}: ${score} points`);
-    });
-    
-    // Return the highest scoring tool if it has a reasonable score
-    const bestTool = scoredTools.sort((a, b) => b.score - a.score)[0];
-    return bestTool && bestTool.score > 2 ? bestTool.tool : null;
-  }
-
-  private prepareToolArguments(query: string, tool: any): any {
-    const args: any = {};
-    
-    // Extract common parameters from query
-    const lowerQuery = query.toLowerCase();
-    
-    console.log(`🔧 Preparing arguments for tool: ${tool.name}`);
-    console.log(`🔧 Query: ${query}`);
-    
-    // Handle arguments based on tool type
-    if (tool.name.includes('create') || tool.name.includes('add')) {
-      // For create operations, extract content
-      if (lowerQuery.includes('post')) {
-        args.title = 'Generated Post';
-        args.body = 'This post was created through the Enhanced MCP Integration system.';
-        args.userId = 1;
-      }
-    } else {
-      // For get/list/retrieve operations - only add what's specifically requested
-      
-      // Look for specific ID parameters in the query
-      const idMatch = query.match(/id\s*:?\s*(\d+)/i);
-      if (idMatch) {
-        args.id = idMatch[1];
-      }
-      
-      // Look for specific user ID requests
-      const userIdMatch = query.match(/user\s*id\s*:?\s*(\d+)/i) || query.match(/userId\s*:?\s*(\d+)/i);
-      if (userIdMatch) {
-        args.userId = userIdMatch[1];
-      }
-      
-      // Handle limit parameters for non-search queries
-      if (!(lowerQuery.includes('how many') || lowerQuery.includes('count') || lowerQuery.includes('check'))) {
-        const limitMatch = query.match(/(\d+)/);
-        if (limitMatch && (lowerQuery.includes('show') || lowerQuery.includes('get'))) {
-          args._limit = limitMatch[1];
-        } else if (lowerQuery.includes('few') || lowerQuery.includes('some')) {
-          args._limit = '5';
-        }
-      } else {
-        console.log(`🔧 Search/count query detected, not limiting results for ${tool.name}`);
-      }
-    }
-    
-    console.log(`🔧 Final arguments for ${tool.name}:`, args);
-    return args;
-  }
-
-  private async synthesizeToolResult(
-    query: string,
-    tool: any,
-    result: any,
-    contextResult: any
-  ): Promise<string> {
-    // Extract meaningful content from tool result
-    let resultContent = '';
-    
-    if (result?.content?.[0]?.text) {
-      resultContent = result.content[0].text;
-    } else if (typeof result === 'object') {
-      resultContent = JSON.stringify(result, null, 2);
-    } else {
-      resultContent = String(result);
-    }
-    
-    // Handle search/count queries specially
-    if (query.toLowerCase().includes('how many') || query.toLowerCase().includes('count') || query.toLowerCase().includes('check')) {
-      return this.synthesizeSearchResult(query, tool, resultContent);
-    }
-    
-    // Create a context-aware response
-    const contextInfo = contextResult.relevantMessages.length > 0 
-      ? `Based on our previous conversation and your request, ` 
-      : `Based on your request, `;
-    
-    // Format the response naturally
-    const response = `${contextInfo}I used the **${tool.name}** tool to get the information you requested.\n\n**Result:**\n${this.formatToolOutput(resultContent)}\n\nIs there anything specific about this data you'd like me to explain or help you with?`;
-    
-    return this.cleanResponse(response);
-  }
-
-  private synthesizeSearchResult(query: string, tool: any, resultContent: string): string {
-    try {
-      // Parse the result to count items
-      const parsed = JSON.parse(resultContent);
-      
-      if (Array.isArray(parsed)) {
-        const searchTerm = this.extractSearchTerm(query);
-        const matchingItems = this.searchInArray(parsed, searchTerm);
-        
-        const totalCount = parsed.length;
-        const matchCount = matchingItems.length;
-        
-        let response = `I searched through ${totalCount} ${tool.name.includes('post') ? 'posts' : 'items'} using the **${tool.name}** tool.\n\n`;
-        
-        if (searchTerm) {
-          response += `**Found ${matchCount} items containing "${searchTerm}":**\n\n`;
-          
-          if (matchCount > 0) {
-            // Show up to 5 matching examples
-            const examples = matchingItems.slice(0, 5).map((item, index) => {
-              const title = item.title || item.name || `Item ${index + 1}`;
-              const body = item.body || item.content || '';
-              const preview = body ? ` - ${body.substring(0, 100)}...` : '';
-              return `• **${title}**${preview}`;
-            }).join('\n');
-            
-            response += examples;
-            
-            if (matchCount > 5) {
-              response += `\n\n...and ${matchCount - 5} more items.`;
-            }
-          } else {
-            response += `No items found containing "${searchTerm}".`;
-          }
-        } else {
-          response += `Total items found: ${totalCount}`;
-        }
-        
-        return response;
-      }
-    } catch (e) {
-      // Fallback to regular formatting
-    }
-    
-    return `Here's what I found using the **${tool.name}** tool:\n\n${this.formatToolOutput(resultContent)}`;
-  }
-
-  private extractSearchTerm(query: string): string {
-    // Extract quoted terms or specific keywords
-    const quotedMatch = query.match(/"([^"]+)"/);
-    if (quotedMatch) {
-      return quotedMatch[1];
-    }
-    
-    // Look for common search patterns - improved patterns
-    const patterns = [
-      /word\s+"([^"]+)"/i,
-      /contains?\s+"([^"]+)"/i,
-      /with\s+"([^"]+)"/i,
-      /have.*word\s+"([^"]+)"/i,
-      /have.*word\s+(\w+)/i,
-      /word\s+(\w+)/i,
-      /contains?\s+(\w+)/i,
-      /"([^"]+)"/,  // Any quoted term
-      /\b(\w+)\s+in\s+it/i  // "test in it" pattern
+    // Clarification indicators
+    const clarificationIndicators = [
+      'what about', 'tell me more', 'explain', 'clarify',
+      'more details', 'elaborate', 'expand on', 'about that',
+      'summary', 'summarize', 'overview'
     ];
-    
-    for (const pattern of patterns) {
-      const match = query.match(pattern);
-      if (match) {
-        console.log(`🔍 Extracted search term "${match[1]}" using pattern:`, pattern);
-        return match[1];
-      }
-    }
-    
-    // Fallback: look for specific words that might be search terms
-    const words = query.toLowerCase().split(/\s+/);
-    const searchWords = words.filter(word => 
-      word.length > 2 && 
-      !['the', 'and', 'or', 'but', 'how', 'many', 'can', 'you', 'check', 'posts', 'comments', 'have', 'with', 'word', 'in', 'it'].includes(word)
-    );
-    
-    if (searchWords.length > 0) {
-      console.log(`🔍 Fallback extracted search term: "${searchWords[0]}"`);
-      return searchWords[0];
-    }
-    
-    return '';
-  }
 
-  private searchInArray(items: any[], searchTerm: string): any[] {
-    if (!searchTerm) return items;
-    
-    const lowerSearchTerm = searchTerm.toLowerCase();
-    
-    return items.filter(item => {
-      if (typeof item === 'string') {
-        return item.toLowerCase().includes(lowerSearchTerm);
-      }
-      
-      if (typeof item === 'object') {
-        // Search in title, body, content, name fields
-        const searchableFields = ['title', 'body', 'content', 'name', 'text'];
-        return searchableFields.some(field => {
-          const value = item[field];
-          return value && String(value).toLowerCase().includes(lowerSearchTerm);
-        });
-      }
-      
-      return false;
-    });
-  }
+    const mcpMatches = mcpIndicators.filter(indicator => lowerQuery.includes(indicator));
+    const clarificationMatches = clarificationIndicators.filter(indicator => lowerQuery.includes(indicator));
 
-  private formatToolOutput(content: string): string {
-    try {
-      // Try to parse as JSON and format nicely
-      const parsed = JSON.parse(content);
-      
-      if (Array.isArray(parsed)) {
-        return parsed.slice(0, 5).map((item, index) => {
-          if (typeof item === 'object') {
-            const title = item.title || item.name || `Item ${index + 1}`;
-            const details = Object.entries(item)
-              .filter(([key]) => key !== 'title' && key !== 'name')
-              .slice(0, 3)
-              .map(([key, value]) => `${key}: ${value}`)
-              .join(', ');
-            return `• **${title}**${details ? ` - ${details}` : ''}`;
-          }
-          return `• ${item}`;
-        }).join('\n');
-      } else if (typeof parsed === 'object') {
-        return Object.entries(parsed)
-          .slice(0, 10)
-          .map(([key, value]) => `• **${key}**: ${value}`)
-          .join('\n');
-      }
-    } catch (e) {
-      // Not JSON, return as-is with some formatting
-    }
-    
-    // Format as plain text with line breaks
-    return content
-      .split('\n')
-      .filter(line => line.trim())
-      .slice(0, 10)
-      .map(line => `• ${line.trim()}`)
-      .join('\n');
-  }
+    const extractedParameters = this.extractParameters(query);
 
-  private async processWithLLMOnly(query: string, contextResult: any): Promise<string> {
-    // Build context-aware prompt
-    const systemPrompt = await this.buildSystemPrompt();
-    const contextPrompt = this.buildContextPrompt(query, contextResult);
-    
-    // Call LLM
-    const llmResponse = await this.callLLM(systemPrompt, contextPrompt);
-    
-    return this.cleanResponse(llmResponse);
-  }
+    // Simple decision logic
+    let type: 'new_mcp_request' | 'clarification_about_last_result' | 'general_conversation';
+    let confidence = 0;
 
-  private async buildSystemPrompt(): Promise<string> {
-    try {
-      // Get available MCP tools for system prompt
-      const tools = await this.mcpClient.listTools();
-      const resources = await this.mcpClient.listResources();
-      
-      const toolsDesc = tools.length > 0 
-        ? tools.map(t => `• ${t.name}: ${t.description}`).join('\n')
-        : 'No tools currently available';
-        
-      const resourcesDesc = resources.length > 0
-        ? resources.map(r => `• ${r.name}: ${r.description}`).join('\n')
-        : 'No resources currently available';
-      
-      return `You are an AI assistant with access to MCP (Model Context Protocol) tools and resources. 
-
-Available MCP Tools:
-${toolsDesc}
-
-Available MCP Resources:
-${resourcesDesc}
-
-Guidelines:
-- Provide helpful, accurate, and context-aware responses
-- Be conversational and natural
-- If the user asks for data that requires MCP tools, suggest using the appropriate tool
-- Focus on being helpful rather than explaining internal processes
-- Keep responses clean and user-focused
-
-Remember: You should sound like a knowledgeable assistant, not a system describing its internal operations.`;
-      
-    } catch (error) {
-      return `You are a helpful AI assistant. Provide clear, accurate, and conversational responses to user queries.`;
-    }
-  }
-
-  private buildContextPrompt(query: string, contextResult: any): string {
-    let prompt = `User Query: ${query}\n\n`;
-    
-    // Add relevant conversation context if available
-    if (contextResult.relevantMessages.length > 0) {
-      prompt += `Relevant Context from Conversation:\n`;
-      prompt += contextResult.relevantMessages
-        .slice(-3) // Last 3 relevant messages
-        .map(msg => `${msg.role}: ${msg.content}`)
-        .join('\n');
-      prompt += '\n\n';
-    }
-    
-    // Add user profile context if relevant
-    if (contextResult.userContext.responseStyle && contextResult.userContext.responseStyle !== 'conversational') {
-      prompt += `User prefers ${contextResult.userContext.responseStyle} responses.\n\n`;
-    }
-    
-    prompt += `Please provide a helpful response to the user's query.`;
-    
-    return prompt;
-  }
-
-  private async callLLM(systemPrompt: string, userPrompt: string): Promise<string> {
-    try {
-      const messages = [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userPrompt }
-      ];
-      
-      switch (this.config.llmProvider) {
-        case 'huggingface':
-          return await this.callHuggingFaceAPI(messages);
-        case 'openai':
-          return await this.callOpenAIAPI(messages);
-        case 'anthropic':
-          return await this.callAnthropicAPI(messages);
-        default:
-          throw new Error(`Unsupported LLM provider: ${this.config.llmProvider}`);
-      }
-    } catch (error) {
-      console.error('LLM API call failed:', error);
-      return `I'm having trouble processing your request right now. ${this.config.enableChaining ? 'Please try again in a moment.' : 'The MCP server is available for direct tool calls if needed.'}`;
-    }
-  }
-
-  private async callHuggingFaceAPI(messages: any[]): Promise<string> {
-    const apiUrl = `https://api-inference.huggingface.co/models/${this.config.modelId}`;
-    
-    // Try chat completions first for newer models
-    try {
-      const response = await fetch(`${apiUrl}/v1/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.config.apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messages,
-          max_tokens: 1024,
-          temperature: 0.7,
-          stream: false
-        })
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        if (result.choices?.[0]?.message?.content) {
-          return result.choices[0].message.content.trim();
-        }
-      }
-    } catch (error) {
-      console.log('Chat completions failed, trying inference API...');
-    }
-
-    // Fallback to inference API
-    const conversationText = messages.map(msg => 
-      `${msg.role === 'user' ? 'User' : msg.role === 'system' ? 'System' : 'Assistant'}: ${msg.content}`
-    ).join('\n');
-
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.config.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        inputs: conversationText + '\nAssistant:',
-        parameters: {
-          max_new_tokens: 1024,
-          temperature: 0.7,
-          do_sample: true,
-          return_full_text: false,
-          stop: ['User:', 'Human:', '\nUser:', '\nHuman:']
-        }
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`Hugging Face API error: ${response.status}`);
-    }
-
-    const result = await response.json();
-    
-    if (Array.isArray(result) && result[0]?.generated_text) {
-      return result[0].generated_text.trim();
-    } else if (result.generated_text) {
-      return result.generated_text.trim();
+    if (this.hasSpecificToolReference(query) || mcpMatches.length >= 2) {
+      type = 'new_mcp_request';
+      confidence = 0.9;
+    } else if (clarificationMatches.length > 0 && this.lastToolResult) {
+      type = 'clarification_about_last_result';
+      confidence = 0.8;
+    } else if (mcpMatches.length > 0 || Object.keys(extractedParameters).length > 0) {
+      type = 'new_mcp_request';
+      confidence = 0.7;
     } else {
-      throw new Error('Unexpected response format from Hugging Face API');
+      type = 'general_conversation';
+      confidence = 0.6;
     }
-  }
 
-  private async callOpenAIAPI(messages: any[]): Promise<string> {
-    // Placeholder for OpenAI integration
-    throw new Error('OpenAI integration not implemented yet');
-  }
-
-  private async callAnthropicAPI(messages: any[]): Promise<string> {
-    // Placeholder for Anthropic integration  
-    throw new Error('Anthropic integration not implemented yet');
-  }
-
-  private cleanResponse(response: string): string {
-    // Remove any system artifacts, debug info, or raw LLM metadata
-    let cleaned = response;
-    
-    // Remove system tags and metadata
-    cleaned = cleaned.replace(/\[SYSTEM\].*?\[\/SYSTEM\]/gs, '');
-    cleaned = cleaned.replace(/\[DEBUG\].*?\[\/DEBUG\]/gs, '');
-    cleaned = cleaned.replace(/\[METADATA\].*?\[\/METADATA\]/gs, '');
-    cleaned = cleaned.replace(/\[TOOL_CALL\].*?\[\/TOOL_CALL\]/gs, '');
-    
-    // Remove confidence scores and internal reasoning
-    cleaned = cleaned.replace(/\(confidence: [\d.]+\)/g, '');
-    cleaned = cleaned.replace(/\[reasoning:.*?\]/gs, '');
-    cleaned = cleaned.replace(/Chain step \d+:/g, '');
-    
-    // Remove JSON artifacts that aren't user data
-    cleaned = cleaned.replace(/^```json\s*\{[\s\S]*?\}\s*```$/gm, '');
-    
-    // Remove prompt artifacts
-    cleaned = cleaned.replace(/^(System|User|Assistant):\s*/gm, '');
-    cleaned = cleaned.replace(/LLM Response:/g, '');
-    cleaned = cleaned.replace(/Processing.*?:/g, '');
-    
-    // Clean up whitespace
-    cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
-    cleaned = cleaned.replace(/^\s+|\s+$/g, '');
-    
-    // Ensure response starts naturally
-    if (cleaned.startsWith('I ') || cleaned.startsWith('Based on ') || cleaned.startsWith('The ')) {
-      return cleaned;
-    }
-    
-    return cleaned;
-  }
-
-  private createFallbackResponse(query: string, error: any): string {
-    return `I encountered an issue processing your request: "${query}". ${error.message || 'Unknown error occurred'}. Please try rephrasing your question or check if the MCP server is properly configured.`;
-  }
-
-  private looksLikeRawData(response: string): boolean {
-    // Check if response looks like raw MCP tool output that should be processed
-    return (
-      response.includes('**Result:**') ||
-      response.includes('using the **') ||
-      response.length > 500 ||
-      /\{[\s\S]*\}/.test(response) // Contains JSON-like structure
-    );
-  }
-
-  private async postProcessWithLLM(originalQuery: string, rawResponse: string): Promise<string> {
-    try {
-      const prompt = `The user asked: "${originalQuery}"
-
-I got this raw response from the MCP tools:
-${rawResponse}
-
-Please provide a clean, natural response that directly answers the user's question. Focus on the key information and present it conversationally. If this was a search/count query, highlight the key findings clearly.`;
-
-      const processedResponse = await this.callLLM(
-        'You are a helpful assistant that provides clear, concise responses based on data retrieved from APIs.',
-        prompt
-      );
-      
-      return this.cleanResponse(processedResponse);
-    } catch (error) {
-      console.warn('LLM post-processing failed:', error);
-      return rawResponse; // Fallback to raw response
-    }
-  }
-
-  // Public utility methods
-  async getSessionStats(): Promise<any> {
-    const context = await this.contextStore.retrieveRelevantContext(this.sessionId, '', 10);
     return {
-      totalMessages: context.relevantMessages.length,
-      userProfile: context.userContext,
-      lastUpdated: new Date()
+      type,
+      confidence,
+      mcpIndicators: mcpMatches,
+      clarificationIndicators: clarificationMatches,
+      extractedParameters
     };
   }
 
-  async updateUserPreferences(preferences: any): Promise<void> {
-    // This would update the user profile in the context store
-    console.log('Updating user preferences:', preferences);
+  private hasSpecificToolReference(query: string): boolean {
+    const toolPatterns = [
+      /get_\w+/,
+      /create_\w+/,
+      /update_\w+/,
+      /delete_\w+/,
+      /list_\w+/,
+      /post\s+\d+/,
+      /user\s+\d+/,
+      /id\s*:?\s*\d+/
+    ];
+
+    return toolPatterns.some(pattern => pattern.test(query.toLowerCase()));
   }
 
-  async clearSession(): Promise<void> {
-    // This would clear the session context
-    console.log('Clearing session:', this.sessionId);
+  private extractParameters(query: string): Record<string, any> {
+    const params: Record<string, any> = {};
+
+    // Extract IDs
+    const idMatch = query.match(/\b(?:id|ID)\s*:?\s*(\d+)/);
+    if (idMatch) {
+      params.id = parseInt(idMatch[1]);
+    }
+
+    // Extract post numbers
+    const postMatch = query.match(/\bpost\s+(\d+)/i);
+    if (postMatch) {
+      params.postId = parseInt(postMatch[1]);
+    }
+
+    // Extract user IDs
+    const userMatch = query.match(/\buser\s+(?:id\s+)?(\d+)/i);
+    if (userMatch) {
+      params.userId = parseInt(userMatch[1]);
+    }
+
+    // Extract quoted strings
+    const quotedMatch = query.match(/"([^"]+)"/);
+    if (quotedMatch) {
+      params.searchTerm = quotedMatch[1];
+    }
+
+    return params;
+  }
+
+  /**
+   * Handle new MCP requests
+   */
+  private async handleNewMCPRequest(query: string, analysis: any): Promise<string> {
+    try {
+      // Clear previous result for new requests
+      this.lastToolResult = null;
+      this.lastQuery = query;
+
+      // Get available tools
+      const tools = await this.mcpClient.listTools();
+      console.log('🔧 Available tools:', tools.length);
+
+      if (tools.length === 0) {
+        return "I'm connected to the MCP server, but no tools are currently available. The server might still be initializing.";
+      }
+
+      // Select best tool
+      const selectedTool = this.selectBestTool(query, tools, analysis.extractedParameters);
+
+      if (!selectedTool) {
+        const toolsList = tools.map(t => `• **${t.name}**: ${t.description || 'No description'}`).join('\n');
+        return `I couldn't determine which tool to use for your request. Here are the available tools:\n\n${toolsList}\n\nPlease be more specific about which tool you'd like me to use.`;
+      }
+
+      // Prepare arguments
+      const toolArgs = this.prepareToolArguments(query, selectedTool, analysis.extractedParameters);
+
+      console.log(`🔧 Using tool: ${selectedTool.name} with args:`, toolArgs);
+
+      // Call the tool
+      const toolResult = await this.mcpClient.callTool(selectedTool.name, toolArgs);
+
+      // Store result for potential follow-up questions
+      this.lastToolResult = {
+        tool: selectedTool,
+        args: toolArgs,
+        result: toolResult,
+        timestamp: Date.now()
+      };
+
+      // Format the response
+      return this.formatToolResponse(query, selectedTool, toolResult, analysis);
+
+    } catch (error) {
+      console.error('❌ MCP tool execution failed:', error);
+      return `I encountered an error while executing the tool: ${error.message}. Please try rephrasing your request.`;
+    }
+  }
+
+  private selectBestTool(query: string, tools: any[], extractedParams: Record<string, any>): any | null {
+    const lowerQuery = query.toLowerCase();
+
+    console.log('🎯 Tool selection for:', query);
+    console.log('🎯 Extracted params:', extractedParams);
+
+    // Direct tool name matching
+    for (const tool of tools) {
+      if (lowerQuery.includes(tool.name.toLowerCase().replace(/_/g, ' '))) {
+        console.log(`🎯 Direct tool name match: ${tool.name}`);
+        return tool;
+      }
+    }
+
+    // Parameter-based selection
+    if (extractedParams.postId || extractedParams.id) {
+      const getPostTool = tools.find(t =>
+        t.name.includes('get') &&
+        t.name.includes('post') &&
+        !t.name.includes('all') &&
+        !t.name.includes('comment')
+      );
+      if (getPostTool) {
+        console.log(`🎯 Post ID detected, using: ${getPostTool.name}`);
+        return getPostTool;
+      }
+    }
+
+    if (extractedParams.userId) {
+      const getUserTool = tools.find(t =>
+        t.name.includes('get') &&
+        t.name.includes('user') &&
+        !t.name.includes('all')
+      );
+      if (getUserTool) {
+        console.log(`🎯 User ID detected, using: ${getUserTool.name}`);
+        return getUserTool;
+      }
+    }
+
+    // Action-based selection
+    const scoredTools = tools.map(tool => {
+      let score = 0;
+      const toolName = tool.name.toLowerCase();
+
+      if (lowerQuery.includes('get') && toolName.includes('get')) score += 5;
+      if (lowerQuery.includes('create') && toolName.includes('create')) score += 5;
+      if (lowerQuery.includes('update') && toolName.includes('update')) score += 5;
+      if (lowerQuery.includes('delete') && toolName.includes('delete')) score += 5;
+      if (lowerQuery.includes('list') && toolName.includes('get') && toolName.includes('all')) score += 5;
+
+      if (lowerQuery.includes('post') && toolName.includes('post')) score += 3;
+      if (lowerQuery.includes('user') && toolName.includes('user')) score += 3;
+      if (lowerQuery.includes('comment') && toolName.includes('comment')) score += 3;
+
+      return { tool, score };
+    });
+
+    const bestTool = scoredTools.sort((a, b) => b.score - a.score)[0];
+
+    if (bestTool && bestTool.score > 3) {
+      console.log(`🎯 Selected tool: ${bestTool.tool.name} (${bestTool.score} points)`);
+      return bestTool.tool;
+    }
+
+    return null;
+  }
+
+  private prepareToolArguments(query: string, tool: any, extractedParams: Record<string, any>): any {
+    const args: any = {};
+
+    // Use extracted parameters
+    if (extractedParams.postId) {
+      args.id = extractedParams.postId;
+    } else if (extractedParams.id) {
+      args.id = extractedParams.id;
+    }
+
+    if (extractedParams.userId) {
+      args.userId = extractedParams.userId;
+    }
+
+    if (extractedParams.searchTerm) {
+      args.q = extractedParams.searchTerm;
+    }
+
+    // Tool-specific defaults
+    if (tool.name.includes('create') && tool.name.includes('post')) {
+      args.title = args.title || 'New Post';
+      args.body = args.body || 'Created via MCP Integration';
+      args.userId = args.userId || 1;
+    }
+
+    // Add limits for list operations
+    if (tool.name.includes('get') && tool.name.includes('all') && !extractedParams.searchTerm) {
+      const limitMatch = query.match(/(\d+)/);
+      if (limitMatch) {
+        args._limit = limitMatch[1];
+      }
+    }
+
+    return args;
+  }
+
+  /**
+   * Handle clarification requests
+   */
+  private async handleClarificationRequest(query: string, analysis: any): Promise<string> {
+    if (!this.lastToolResult) {
+      return "I don't have any recent tool results to clarify. Please make a new request.";
+    }
+
+    const timeSinceLastTool = Date.now() - this.lastToolResult.timestamp;
+    if (timeSinceLastTool > 300000) { // 5 minutes
+      return "The previous tool result is too old. Please make a new request.";
+    }
+
+    const resultContent = this.extractToolResultContent(this.lastToolResult.result);
+
+    if (query.toLowerCase().includes('summary') || query.toLowerCase().includes('summarize')) {
+      return this.createResultSummary(resultContent, this.lastToolResult.tool.name);
+    }
+
+    return `Based on the previous result from **${this.lastToolResult.tool.name}**, here's what I can tell you:\n\n${this.formatToolOutputConcise(resultContent)}\n\nWhat specific aspect would you like me to explain further?`;
+  }
+
+  /**
+   * Handle general conversation
+   */
+  private async handleGeneralConversation(query: string): Promise<string> {
+    if (query.toLowerCase().includes('hello') || query.toLowerCase().includes('hi')) {
+      return "Hello! I'm here to help you interact with MCP tools and answer your questions. What can I help you with today?";
+    }
+
+    if (query.toLowerCase().includes('help')) {
+      return await this.getHelpResponse();
+    }
+
+    return "I'm designed to help you interact with MCP tools and services. If you need to fetch data, create content, or perform other operations, just let me know what you'd like to do!";
+  }
+
+  /**
+   * Format tool responses
+   */
+  private formatToolResponse(query: string, tool: any, result: any, analysis: any): string {
+    const resultContent = this.extractToolResultContent(result);
+
+    // For specific item requests
+    if (analysis.extractedParameters.postId || analysis.extractedParameters.id) {
+      return this.formatSpecificItemResponse(resultContent, tool.name, analysis.extractedParameters);
+    }
+
+    // For list requests
+    if (tool.name.includes('all') || tool.name.includes('list')) {
+      return this.formatListResponse(resultContent, tool.name, query);
+    }
+
+    // Default formatting
+    return `Here's the result from **${tool.name}**:\n\n${this.formatToolOutputConcise(resultContent)}`;
+  }
+
+  private formatSpecificItemResponse(content: string, toolName: string, params: Record<string, any>): string {
+    try {
+      const data = JSON.parse(content);
+
+      if (data && typeof data === 'object' && !Array.isArray(data)) {
+        const itemId = params.postId || params.id || data.id;
+        const title = data.title || data.name || `Item ${itemId}`;
+
+        let response = `Here's the information for **${title}**`;
+        if (itemId) response += ` (ID: ${itemId})`;
+        response += ':\n\n';
+
+        Object.entries(data).forEach(([key, value]) => {
+          if (key !== 'id' && value && String(value).length > 0) {
+            const displayKey = key.charAt(0).toUpperCase() + key.slice(1);
+            response += `**${displayKey}:** ${value}\n`;
+          }
+        });
+
+        return response.trim();
+      }
+    } catch (e) {
+      // Not JSON, return as-is
+    }
+
+    return `Here's the result:\n\n${content}`;
+  }
+
+  private formatListResponse(content: string, toolName: string, originalQuery: string): string {
+    try {
+      const data = JSON.parse(content);
+
+      if (Array.isArray(data)) {
+        const count = data.length;
+        let response = `Found **${count} items** using ${toolName}:\n\n`;
+
+        const preview = data.slice(0, 5).map((item, index) => {
+          if (typeof item === 'object') {
+            const title = item.title || item.name || `Item ${index + 1}`;
+            const id = item.id ? ` (ID: ${item.id})` : '';
+            return `${index + 1}. **${title}**${id}`;
+          }
+          return `${index + 1}. ${item}`;
+        }).join('\n');
+
+        response += preview;
+
+        if (count > 5) {
+          response += `\n\n...and ${count - 5} more items.`;
+        }
+
+        response += '\n\nWould you like me to show you details about any specific item?';
+
+        return response;
+      }
+    } catch (e) {
+      // Not JSON array
+    }
+
+    return `Here are the results:\n\n${this.formatToolOutputConcise(content)}`;
+  }
+
+  private extractToolResultContent(result: any): string {
+    if (result?.content?.[0]?.text) {
+      return result.content[0].text;
+    } else if (typeof result === 'object') {
+      return JSON.stringify(result, null, 2);
+    } else {
+      return String(result);
+    }
+  }
+
+  private formatToolOutputConcise(content: string): string {
+    try {
+      const parsed = JSON.parse(content);
+
+      if (Array.isArray(parsed)) {
+        if (parsed.length <= 3) {
+          return JSON.stringify(parsed, null, 2);
+        } else {
+          return `Array with ${parsed.length} items. First few:\n${JSON.stringify(parsed.slice(0, 3), null, 2)}\n...and ${parsed.length - 3} more.`;
+        }
+      } else if (typeof parsed === 'object') {
+        return JSON.stringify(parsed, null, 2);
+      }
+    } catch (e) {
+      // Not JSON
+    }
+
+    if (content.length > 1000) {
+      return content.substring(0, 1000) + '...\n\n*(Content truncated for readability)*';
+    }
+
+    return content;
+  }
+
+  private createResultSummary(content: string, toolName: string): string {
+    try {
+      const data = JSON.parse(content);
+
+      if (Array.isArray(data)) {
+        return `**Summary from ${toolName}:**\n\n• Total items: ${data.length}\n• Data type: Array of objects\n• Sample item: ${data[0] ? JSON.stringify(data[0], null, 2) : 'None'}`;
+      } else if (typeof data === 'object') {
+        const fields = Object.keys(data);
+        return `**Summary from ${toolName}:**\n\n• Fields: ${fields.join(', ')}\n• Data type: Single object\n• Key information: ${JSON.stringify(data, null, 2)}`;
+      }
+    } catch (e) {
+      // Not JSON
+    }
+
+    return `**Summary from ${toolName}:**\n\n• Content length: ${content.length} characters\n• Data type: Text\n• Preview: ${content.substring(0, 200)}...`;
+  }
+
+  private async getHelpResponse(): Promise<string> {
+    try {
+      const tools = await this.mcpClient.listTools();
+      const toolsList = tools.map(t => `• **${t.name}**: ${t.description || 'No description'}`).join('\n');
+
+      return `I can help you interact with these MCP tools:\n\n${toolsList}\n\nJust tell me what you'd like to do in natural language. For example:\n• "Get post 76"\n• "Show me all users"\n• "Create a new post"`;
+    } catch (error) {
+      return "I'm here to help you interact with MCP tools and answer questions. What would you like to do?";
+    }
+  }
+
+  private createFallbackResponse(query: string, error: any): string {
+    return `I encountered an issue processing your request: "${query}". ${error.message || 'Unknown error occurred'}. Please try rephrasing your question.`;
   }
 }

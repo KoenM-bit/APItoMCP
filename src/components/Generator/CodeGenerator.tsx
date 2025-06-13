@@ -27,17 +27,240 @@ export const CodeGenerator: React.FC<CodeGeneratorProps> = ({
   const [deploymentUrl, setDeploymentUrl] = useState('');
   const [showTesting, setShowTesting] = useState(false);
 
+  const generateCustomHelperFunctions = (tools: any[]) => {
+  const customTools = tools.filter(tool => tool.isCustom);
+  if (customTools.length === 0) return '';
+
+  const helperFunctions = [];
+
+  customTools.forEach(tool => {
+    const implementation = tool.customImplementation || '';
+    if (!implementation.trim()) return;
+
+    const lines = implementation.split('\n');
+    let currentHelper = [];
+    let inHelperFunction = false;
+
+    for (const line of lines) {
+      // Check if this is a helper function definition (not the main tool function)
+      if (line.match(/^(async )?def [a-zA-Z_][a-zA-Z0-9_]*\s*\(/)) {
+        // Save previous helper if exists
+        if (currentHelper.length > 0) {
+          helperFunctions.push(currentHelper.join('\n'));
+          currentHelper = [];
+        }
+
+        // Only include if it's NOT the main tool function
+        if (!line.includes(`def ${tool.name}(`)) {
+          currentHelper.push(line);
+          inHelperFunction = true;
+        } else {
+          inHelperFunction = false;
+        }
+      } else if (inHelperFunction) {
+        currentHelper.push(line);
+
+        // If we hit a non-indented line that's not empty, function has ended
+        if (line.trim() !== '' && !line.startsWith('    ') && !line.startsWith('\t')) {
+          helperFunctions.push(currentHelper.join('\n'));
+          currentHelper = [];
+          inHelperFunction = false;
+        }
+      }
+    }
+
+    // Add the last helper function if exists
+    if (currentHelper.length > 0) {
+      helperFunctions.push(currentHelper.join('\n'));
+    }
+  });
+
+  return helperFunctions.length > 0 ? '\n' + helperFunctions.join('\n\n') : '';
+};
+
+  const generateCustomPythonToolHandler = (tool: any) => {
+  const implementation = tool.customImplementation || '';
+
+  if (!implementation.trim()) {
+    return `# Custom implementation for ${tool.name}
+                result = {"message": "Custom method executed", "arguments": arguments}
+
+                return [TextContent(
+                    type="text",
+                    text=json.dumps(result, indent=2)
+                )]`;
+  }
+
+  const lines = implementation.split('\n');
+  const cleanedLines = [];
+  let inMainFunction = false;
+  let foundImplementation = false;
+
+  for (const line of lines) {
+    const trimmedLine = line.trim();
+
+    // Check if we're entering the main tool function
+    if (trimmedLine.includes(`def ${tool.name}(`)) {
+      inMainFunction = true;
+      continue; // Skip the function definition line
+    }
+
+    // Check if we're entering a different function (helper function)
+    if (trimmedLine.match(/^(async )?def [a-zA-Z_][a-zA-Z0-9_]*\s*\(/) && !trimmedLine.includes(`def ${tool.name}(`)) {
+      inMainFunction = false;
+      continue;
+    }
+
+    // Only process lines inside the main tool function
+    if (inMainFunction) {
+      // Skip docstrings and comments
+      if (trimmedLine.startsWith('"""') || trimmedLine.startsWith('#') || trimmedLine === '') {
+        continue;
+      }
+
+      // This is actual implementation code from the main function
+      if (trimmedLine !== '') {
+        foundImplementation = true;
+        // Remove leading whitespace (function indentation)
+        const cleanedLine = line.startsWith('    ') ? line.substring(4) : line;
+        cleanedLines.push(cleanedLine);
+      }
+    }
+  }
+
+  // If no implementation found, use default
+  if (!foundImplementation || cleanedLines.length === 0) {
+    return `# Custom implementation for ${tool.name}
+                result = {"message": "Custom method executed", "arguments": arguments}
+
+                return [TextContent(
+                    type="text",
+                    text=json.dumps(result, indent=2)
+                )]`;
+  }
+
+  let implementationCode = cleanedLines.join('\n                ');
+
+  // SIMPLIFIED: Ensure proper return statement
+  if (!implementationCode.includes('return [TextContent')) {
+    // Check if there's already a response_data variable
+    if (implementationCode.includes('response_data =')) {
+      implementationCode += '\n                \n                return [TextContent(\n                    type="text",\n                    text=json.dumps(response_data, indent=2)\n                )]';
+    } else {
+      // Add a fallback result and return
+      implementationCode += '\n                \n                # Ensure we have a result to return\n                if "result" not in locals():\n                    result = {"status": "executed", "arguments": arguments}\n                \n                return [TextContent(\n                    type="text",\n                    text=json.dumps(result, indent=2)\n                )]';
+    }
+  }
+
+  return implementationCode;
+};
+
+  const generatePythonToolHandler = (tool: any) => {
+  // Generate clean, production-ready tool implementation
+  if (!tool.endpoints || tool.endpoints.length === 0) {
+    return `# Default implementation for ${tool.name}
+                response = await client.get("/")
+                response.raise_for_status()`;
+  }
+
+  const endpoint = tool.endpoints[0]; // Use first endpoint as primary
+  const pathParams = endpoint.parameters?.filter((p: any) => p.location === 'path') || [];
+  const queryParams = endpoint.parameters?.filter((p: any) => p.location === 'query') || [];
+  const bodyParams = endpoint.parameters?.filter((p: any) => p.location === 'body') || [];
+
+  let path = endpoint.path || '/';
+  const method = endpoint.method?.toLowerCase() || 'get';
+  const lines = [];
+
+  // Handle path parameters first
+  if (pathParams.length > 0) {
+    pathParams.forEach((param: any) => {
+      const varName = param.name;
+      lines.push(`${varName} = arguments['${param.name}']`);
+      // Replace placeholder with variable name for f-string
+      path = path.replace(`{${param.name}}`, `{${varName}}`);
+    });
+  }
+
+  // Handle query parameters
+  if (queryParams.length > 0) {
+    lines.push('params = {}');
+    queryParams.forEach((param: any) => {
+      if (param.required) {
+        lines.push(`params['${param.name}'] = arguments['${param.name}']`);
+      } else {
+        lines.push(`if '${param.name}' in arguments:`);
+        lines.push(`    params['${param.name}'] = arguments['${param.name}']`);
+      }
+    });
+  }
+
+  // Handle request body for POST/PUT/PATCH operations
+  if (method === 'post' || method === 'put' || method === 'patch') {
+    lines.push('payload = {}');
+
+    // Add common fields based on the tool name and resource
+    if (tool.name.includes('post')) {
+      lines.push(`if 'userId' in arguments: payload['userId'] = arguments['userId']`);
+      lines.push(`if 'title' in arguments: payload['title'] = arguments['title']`);
+      lines.push(`if 'body' in arguments: payload['body'] = arguments['body']`);
+    } else if (tool.name.includes('user')) {
+      lines.push(`if 'name' in arguments: payload['name'] = arguments['name']`);
+      lines.push(`if 'username' in arguments: payload['username'] = arguments['username']`);
+      lines.push(`if 'email' in arguments: payload['email'] = arguments['email']`);
+    } else if (tool.name.includes('comment')) {
+      lines.push(`if 'postId' in arguments: payload['postId'] = arguments['postId']`);
+      lines.push(`if 'name' in arguments: payload['name'] = arguments['name']`);
+      lines.push(`if 'email' in arguments: payload['email'] = arguments['email']`);
+      lines.push(`if 'body' in arguments: payload['body'] = arguments['body']`);
+    } else {
+      // Generic payload handling
+      bodyParams.forEach((param: any) => {
+        if (param.required) {
+          lines.push(`payload['${param.name}'] = arguments['${param.name}']`);
+        } else {
+          lines.push(`if '${param.name}' in arguments: payload['${param.name}'] = arguments['${param.name}']`);
+        }
+      });
+    }
+  }
+
+  // FIXED: Generate the actual API call with proper f-string usage
+  const needsFString = pathParams.length > 0;
+  let pathExpression;
+
+  if (needsFString) {
+    // Use f-string for dynamic paths
+    pathExpression = `f"${path}"`;
+  } else {
+    // Use regular string for static paths
+    pathExpression = `"${path}"`;
+  }
+
+  const callArgs = [pathExpression];
+
+  if (queryParams.length > 0) callArgs.push('params=params');
+  if (method === 'post' || method === 'put' || method === 'patch') {
+    callArgs.push('json=payload');
+  }
+
+  lines.push(`response = await client.${method}(${callArgs.join(', ')})`);
+  lines.push('response.raise_for_status()');
+
+  return lines.join('\n                ');
+};
+
   const generatePythonCode = () => {
     const serverName = (apiInfo.title || 'API').toLowerCase().replace(/\s+/g, '-') + '-server';
     // Use the correct base URL or detect from the API spec
     const baseUrl = apiInfo.servers?.[0]?.url || endpoints[0]?.baseUrl || 'https://api.example.com';
-    
+
     // Debug logging
     console.log('🔍 URL extraction debug:');
     console.log('  apiInfo.servers:', apiInfo.servers);
     console.log('  endpoints[0]?.baseUrl:', endpoints[0]?.baseUrl);
     console.log('  final baseUrl:', baseUrl);
-    
+
     return `#!/usr/bin/env python3
 """
 Generated MCP Server for ${apiInfo.title || 'API'}
@@ -75,6 +298,8 @@ API_BASE_URL = "${baseUrl}"
 async def get_http_client():
     """Get configured HTTP client"""
     return httpx.AsyncClient(base_url=API_BASE_URL)
+
+${generateCustomHelperFunctions(tools)}
 
 @server.list_resources()
 async def list_resources() -> List[Resource]:
@@ -129,15 +354,11 @@ async def call_tool(name: str, arguments: Dict[str, Any]) -> List[TextContent]:
         try:
 ${tools.map((tool, index) => `            ${index === 0 ? 'if' : 'elif'} name == "${tool.name}":
                 # ${tool.description}
-                ${generatePythonToolHandler(tool)}
-                
-                return [TextContent(
-                    type="text",
-                    text=json.dumps(response.json(), indent=2)
-                )]`).join('\n')}
+                ${tool.isCustom ? generateCustomPythonToolHandler(tool) :
+                  generatePythonToolHandler(tool) + '\n                \n                return [TextContent(\n                    type="text",\n                    text=json.dumps(response.json(), indent=2)\n                )]'}`).join('\n')}
             else:
                 raise ValueError(f"Unknown tool: {name}")
-                
+
         except httpx.HTTPStatusError as e:
             logger.error(f"HTTP {e.response.status_code} error calling {name}: {e}")
             return [TextContent(
@@ -261,7 +482,7 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
 
   switch (uri) {
 ${resources.map(resource => `    case '${resource.uri}': {
-      const response = await makeApiRequest('${resource.endpoint.path}');
+      const response = await makeApiRequest('${resource.endpoint?.path || resource.path}');
       const data = await response.json();
       return {
         contents: [
@@ -300,13 +521,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     switch (name) {
 ${tools.map(tool => `      case '${tool.name}': {
         // Handle ${tool.description}
-        ${generateTypeScriptToolHandler(tool)}
-        
+        ${tool.isCustom ? generateCustomTypeScriptToolHandler(tool) : generateTypeScriptToolHandler(tool)}
+
         return {
           content: [
             {
               type: 'text',
-              text: \`Tool \${name} executed successfully\`,
+              text: ${tool.isCustom ? 'JSON.stringify(result, null, 2)' : `\`Tool \${name} executed successfully\``},
             },
           ],
         };
@@ -333,7 +554,7 @@ ${tools.map(tool => `      case '${tool.name}': {
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  
+
   // Cleanup on exit
   process.on('SIGINT', async () => {
     await server.close();
@@ -347,95 +568,42 @@ main().catch((error) => {
 });`;
   };
 
-  const generatePythonToolHandler = (tool: any) => {
-    // Generate clean, production-ready tool implementation
-    if (!tool.endpoints || tool.endpoints.length === 0) {
-      return `# Default implementation for ${tool.name}
-                response = await client.get("/")
-                response.raise_for_status()`;
-    }
+  const generateCustomTypeScriptToolHandler = (tool: any) => {
+    // For custom tools, adapt the Python implementation to TypeScript
+    const implementation = tool.customImplementation || `// Custom implementation for ${tool.name}
+        const result = { message: "Custom method executed", arguments: args };`;
 
-    const endpoint = tool.endpoints[0]; // Use first endpoint as primary
-    const pathParams = endpoint.parameters?.filter((p: any) => p.location === 'path') || [];
-    const queryParams = endpoint.parameters?.filter((p: any) => p.location === 'query') || [];
-    const bodyParams = endpoint.parameters?.filter((p: any) => p.location === 'body') || [];
+    // Convert Python-style implementation to TypeScript
+    const adaptedImplementation = implementation
+      .replace(/async def \w+\([^)]*\):/g, `// Custom method implementation`)
+      .replace(/def \w+\([^)]*\):/g, `// Custom method implementation`)
+      .replace(/arguments/g, 'args')
+      .replace(/await client\./g, 'await makeApiRequest(')
+      .replace(/\.get\(/g, ', { method: "GET" }); const response = await fetch(')
+      .replace(/\.post\(/g, ', { method: "POST" }); const response = await fetch(')
+      .replace(/\.put\(/g, ', { method: "PUT" }); const response = await fetch(')
+      .replace(/\.delete\(/g, ', { method: "DELETE" }); const response = await fetch(')
+      .replace(/response\.json\(\)/g, 'await response.json()')
+      .split('\n')
+      .map(line => line.startsWith('    ') ? line.substring(4) : line)
+      .join('\n        ');
 
-    let path = endpoint.path || '/';
-    const method = endpoint.method?.toLowerCase() || 'get';
-    const lines = [];
-    
-    // Handle path parameters first
-    if (pathParams.length > 0) {
-      pathParams.forEach((param: any) => {
-        const varName = param.name;
-        lines.push(`${varName} = arguments['${param.name}']`);
-        path = path.replace(`{${param.name}}`, `{${varName}}`);
-      });
-    }
-    
-    // Handle query parameters
-    if (queryParams.length > 0) {
-      lines.push('params = {}');
-      queryParams.forEach((param: any) => {
-        if (param.required) {
-          lines.push(`params['${param.name}'] = arguments['${param.name}']`);
-        } else {
-          lines.push(`if '${param.name}' in arguments:`);
-          lines.push(`    params['${param.name}'] = arguments['${param.name}']`);
-        }
-      });
-    }
-
-    // Handle request body for POST/PUT/PATCH operations
-    if (method === 'post' || method === 'put' || method === 'patch') {
-      lines.push('payload = {}');
-      
-      // Add common fields based on the tool name and resource
-      const resourceName = tool.resourceName || 'item';
-      if (tool.name.includes('post')) {
-        lines.push(`if 'userId' in arguments: payload['userId'] = arguments['userId']`);
-        lines.push(`if 'title' in arguments: payload['title'] = arguments['title']`);
-        lines.push(`if 'body' in arguments: payload['body'] = arguments['body']`);
-      } else if (tool.name.includes('user')) {
-        lines.push(`if 'name' in arguments: payload['name'] = arguments['name']`);
-        lines.push(`if 'username' in arguments: payload['username'] = arguments['username']`);
-        lines.push(`if 'email' in arguments: payload['email'] = arguments['email']`);
-      } else if (tool.name.includes('comment')) {
-        lines.push(`if 'postId' in arguments: payload['postId'] = arguments['postId']`);
-        lines.push(`if 'name' in arguments: payload['name'] = arguments['name']`);
-        lines.push(`if 'email' in arguments: payload['email'] = arguments['email']`);
-        lines.push(`if 'body' in arguments: payload['body'] = arguments['body']`);
-      } else {
-        // Generic payload handling
-        bodyParams.forEach((param: any) => {
-          if (param.required) {
-            lines.push(`payload['${param.name}'] = arguments['${param.name}']`);
-          } else {
-            lines.push(`if '${param.name}' in arguments: payload['${param.name}'] = arguments['${param.name}']`);
-          }
-        });
-      }
-    }
-
-    // Generate the actual API call with correct method and parameters
-    const callArgs = [`"${path}"`];
-    
-    if (queryParams.length > 0) callArgs.push('params=params');
-    if (method === 'post' || method === 'put' || method === 'patch') {
-      callArgs.push('json=payload');
-    }
-
-    lines.push(`response = await client.${method}(${callArgs.join(', ')})`);
-    lines.push('response.raise_for_status()');
-
-    return lines.join('\n                ');
+    return `// Custom implementation
+        ${adaptedImplementation}
+        const result = await ${tool.name.replace(/[^a-zA-Z0-9_]/g, '_')}_impl?.(args) ?? { status: "executed", arguments: args };`;
   };
 
   const generateTypeScriptToolHandler = (tool: any) => {
+    if (!tool.endpoints || tool.endpoints.length === 0) {
+      return `// Default implementation
+        const response = await makeApiRequest('/');
+        const result = await response.json();`;
+    }
+
     return tool.endpoints.map((endpoint: any) => {
-      const pathParams = endpoint.parameters.filter((p: any) => p.location === 'path');
-      const queryParams = endpoint.parameters.filter((p: any) => p.location === 'query');
-      const bodyParams = endpoint.parameters.filter((p: any) => p.location === 'body');
+      const pathParams = endpoint.parameters?.filter((p: any) => p.location === 'path') || [];
+      const queryParams = endpoint.parameters?.filter((p: any) => p.location === 'query') || [];
+      const bodyParams = endpoint.parameters?.filter((p: any) => p.location === 'body') || [];
 
       let path = endpoint.path;
       pathParams.forEach((param: any) => {
