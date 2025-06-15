@@ -24,7 +24,15 @@ import {
   Maximize2,
   Minimize2,
   MessageSquare,
-  Bot
+  Bot,
+  Globe,
+  ExternalLink,
+  Copy,
+  Download,
+  Wifi,
+  WifiOff,
+  Server,
+  Link
 } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { Card, CardContent, CardHeader } from '../ui/Card';
@@ -52,9 +60,12 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
 }) => {
   const [isRunning, setIsRunning] = useState(false);
   const [serverStatus, setServerStatus] = useState<'stopped' | 'starting' | 'running' | 'error'>('stopped');
-  const [activeTab, setActiveTab] = useState<'chat' | 'simulator' | 'debug' | 'metrics' | 'terminal'>('chat');
+  const [exposureStatus, setExposureStatus] = useState<'not_exposed' | 'exposing' | 'exposed' | 'error'>('not_exposed');
+  const [configStatus, setConfigStatus] = useState<'not_ready' | 'generating' | 'ready'>('not_ready');
+  const [activeTab, setActiveTab] = useState<'chat' | 'simulator' | 'debug' | 'metrics' | 'terminal' | 'claude'>('chat');
   const [webContainer, setWebContainer] = useState<WebContainerManager | null>(null);
   const [serverUrl, setServerUrl] = useState<string>('');
+  const [exposureUrl, setExposureUrl] = useState<string>('');
   const [testResults, setTestResults] = useState<any[]>([]);
   const [performanceData, setPerformanceData] = useState<any[]>([]);
   const [debugLogs, setDebugLogs] = useState<any[]>([]);
@@ -65,6 +76,9 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
   const [lastTestResult, setLastTestResult] = useState<any>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [responseExpanded, setResponseExpanded] = useState(false);
+  const [claudeConfig, setClaudeConfig] = useState<any>(null);
+  const [claudeInstructions, setClaudeInstructions] = useState<string>('');
+  const [exposureTestResult, setExposureTestResult] = useState<any>(null);
 
   const terminalRef = useRef<HTMLDivElement>(null);
   const performanceInterval = useRef<NodeJS.Timeout | null>(null);
@@ -197,6 +211,9 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
       // Start performance monitoring
       startPerformanceMonitoring();
 
+      // Auto-expose the server
+      await handleExposeServer();
+
     } catch (error) {
       console.error('Failed to start server:', error);
       setServerStatus('error');
@@ -208,6 +225,86 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
     }
   };
 
+  const handleExposeServer = async () => {
+    if (!webContainer || serverStatus !== 'running') {
+      addDebugLog('error', 'Cannot expose server: not running');
+      return;
+    }
+
+    try {
+      setExposureStatus('exposing');
+      addDebugLog('info', 'Starting server exposure');
+      addTerminalOutput('Exposing MCP server for external access...');
+
+      const exposedUrl = await webContainer.exposeServer();
+      
+      setExposureUrl(exposedUrl);
+      setExposureStatus('exposed');
+      addDebugLog('info', 'Server exposed successfully', { url: exposedUrl });
+      addTerminalOutput(`Server exposed at: ${exposedUrl}`);
+
+      // Generate Claude Desktop configuration
+      await generateClaudeConfig();
+
+      // Test the exposure
+      await testServerExposure();
+
+    } catch (error) {
+      console.error('Failed to expose server:', error);
+      setExposureStatus('error');
+      addDebugLog('error', 'Failed to expose server', error);
+      addTerminalOutput(`Exposure failed: ${error.message}`);
+    }
+  };
+
+  const generateClaudeConfig = async () => {
+    if (!webContainer) return;
+
+    try {
+      setConfigStatus('generating');
+      addDebugLog('info', 'Generating Claude Desktop configuration');
+
+      const { config, instructions } = webContainer.generateClaudeDesktopConfig();
+      
+      setClaudeConfig(config);
+      setClaudeInstructions(instructions);
+      setConfigStatus('ready');
+      
+      addDebugLog('info', 'Claude Desktop configuration generated');
+      addTerminalOutput('Claude Desktop configuration ready');
+
+    } catch (error) {
+      console.error('Failed to generate Claude config:', error);
+      addDebugLog('error', 'Failed to generate Claude config', error);
+      addTerminalOutput(`Config generation failed: ${error.message}`);
+    }
+  };
+
+  const testServerExposure = async () => {
+    if (!webContainer) return;
+
+    try {
+      addDebugLog('info', 'Testing server exposure');
+      addTerminalOutput('Testing external server access...');
+
+      const testResult = await webContainer.testExposure();
+      setExposureTestResult(testResult);
+
+      if (testResult.success) {
+        addDebugLog('info', 'Exposure test passed', testResult);
+        addTerminalOutput(`Exposure test: PASSED (${testResult.latency}ms)`);
+      } else {
+        addDebugLog('warn', 'Exposure test failed', testResult);
+        addTerminalOutput(`Exposure test: FAILED - ${testResult.error}`);
+      }
+
+    } catch (error) {
+      console.error('Exposure test failed:', error);
+      addDebugLog('error', 'Exposure test error', error);
+      addTerminalOutput(`Exposure test error: ${error.message}`);
+    }
+  };
+
   const handleStopServer = async () => {
     if (!webContainer) return;
 
@@ -215,7 +312,13 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
       addTerminalOutput('Stopping MCP server...');
       await webContainer.stopServer();
       setServerStatus('stopped');
+      setExposureStatus('not_exposed');
+      setConfigStatus('not_ready');
       setServerUrl('');
+      setExposureUrl('');
+      setClaudeConfig(null);
+      setClaudeInstructions('');
+      setExposureTestResult(null);
       setInitializationProgress('Server stopped');
 
       if (performanceInterval.current) {
@@ -366,6 +469,26 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
     }
   };
 
+  const copyClaudeConfig = () => {
+    if (claudeConfig) {
+      navigator.clipboard.writeText(JSON.stringify(claudeConfig, null, 2));
+      addTerminalOutput('Claude Desktop config copied to clipboard');
+    }
+  };
+
+  const downloadClaudeConfig = () => {
+    if (claudeConfig) {
+      const blob = new Blob([JSON.stringify(claudeConfig, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'claude_desktop_config.json';
+      a.click();
+      URL.revokeObjectURL(url);
+      addTerminalOutput('Claude Desktop config downloaded');
+    }
+  };
+
   const renderParameterInput = (param: any) => {
     const value = toolParameters[param.name] || '';
 
@@ -422,8 +545,43 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
     }
   };
 
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'running':
+      case 'exposed':
+      case 'ready':
+        return <CheckCircle2 className="w-4 h-4 text-green-500" />;
+      case 'starting':
+      case 'exposing':
+      case 'generating':
+        return <Loader2 className="w-4 h-4 text-yellow-500 animate-spin" />;
+      case 'error':
+        return <XCircle className="w-4 h-4 text-red-500" />;
+      default:
+        return <div className="w-4 h-4 bg-gray-400 rounded-full" />;
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'running':
+      case 'exposed':
+      case 'ready':
+        return 'text-green-600';
+      case 'starting':
+      case 'exposing':
+      case 'generating':
+        return 'text-yellow-600';
+      case 'error':
+        return 'text-red-600';
+      default:
+        return 'text-gray-600';
+    }
+  };
+
   const tabs = [
     { id: 'chat', label: 'LLM Chat', icon: MessageSquare },
+    { id: 'claude', label: 'Claude Desktop', icon: ExternalLink },
     { id: 'simulator', label: 'Tools', icon: Zap },
     { id: 'debug', label: 'Debug', icon: Terminal },
     { id: 'metrics', label: 'Metrics', icon: BarChart3 },
@@ -432,7 +590,7 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
 
   return (
     <div className="h-screen flex flex-col bg-gray-50">
-      {/* Compact Header */}
+      {/* Enhanced Header with Status Indicators */}
       <div className="bg-white border-b border-gray-200 px-4 py-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
@@ -440,29 +598,39 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
               ← Back
             </Button>
             <div>
-              <h1 className="text-lg font-bold text-gray-900">MCP Testing</h1>
+              <h1 className="text-lg font-bold text-gray-900">MCP Testing & Exposure</h1>
               <p className="text-xs text-gray-600">
                 {language} server • {tools.length} tools • {resources.length} resources
               </p>
             </div>
           </div>
 
-          <div className="flex items-center space-x-3">
-            {/* Compact Server Status */}
-            <div className="flex items-center space-x-2 text-sm">
-              <div className={`w-2 h-2 rounded-full ${
-                serverStatus === 'running' ? 'bg-green-500' :
-                serverStatus === 'starting' ? 'bg-yellow-500 animate-pulse' :
-                serverStatus === 'error' ? 'bg-red-500' :
-                'bg-gray-400'
-              }`} />
-              <span className="font-medium capitalize">{serverStatus}</span>
-              {initializationProgress && (
-                <span className="text-xs text-gray-500">({initializationProgress})</span>
-              )}
+          <div className="flex items-center space-x-6">
+            {/* Status Indicators */}
+            <div className="flex items-center space-x-4 text-sm">
+              <div className="flex items-center space-x-2">
+                {getStatusIcon(serverStatus)}
+                <span className={`font-medium ${getStatusColor(serverStatus)}`}>
+                  Server: {serverStatus}
+                </span>
+              </div>
+              
+              <div className="flex items-center space-x-2">
+                {getStatusIcon(exposureStatus)}
+                <span className={`font-medium ${getStatusColor(exposureStatus)}`}>
+                  Exposure: {exposureStatus}
+                </span>
+              </div>
+              
+              <div className="flex items-center space-x-2">
+                {getStatusIcon(configStatus)}
+                <span className={`font-medium ${getStatusColor(configStatus)}`}>
+                  Config: {configStatus}
+                </span>
+              </div>
             </div>
 
-            {/* Compact Server Controls */}
+            {/* Server Controls */}
             {serverStatus === 'stopped' || serverStatus === 'error' ? (
               <Button
                 onClick={handleStartServer}
@@ -477,20 +645,22 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
                 ) : (
                   <>
                     <Play className="w-3 h-3 mr-1" />
-                    Start
+                    Start & Expose
                   </>
                 )}
               </Button>
             ) : (
               <div className="flex items-center space-x-2">
-                <Button
-                  onClick={handleInitializeMCP}
-                  variant="outline"
-                  size="sm"
-                >
-                  <Zap className="w-3 h-3 mr-1" />
-                  Init MCP
-                </Button>
+                {exposureStatus === 'not_exposed' && (
+                  <Button
+                    onClick={handleExposeServer}
+                    variant="outline"
+                    size="sm"
+                  >
+                    <Globe className="w-3 h-3 mr-1" />
+                    Expose Server
+                  </Button>
+                )}
                 <Button
                   onClick={handleStopServer}
                   variant="outline"
@@ -503,6 +673,13 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
             )}
           </div>
         </div>
+
+        {/* Progress Indicator */}
+        {initializationProgress && (
+          <div className="mt-2 text-xs text-gray-600">
+            {initializationProgress}
+          </div>
+        )}
       </div>
 
       {/* Main Content Area */}
@@ -603,6 +780,9 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
                     {tab.id === 'chat' && (
                       <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
                     )}
+                    {tab.id === 'claude' && exposureStatus === 'exposed' && (
+                      <div className="w-2 h-2 bg-green-500 rounded-full" />
+                    )}
                   </button>
                 );
               })}
@@ -628,6 +808,193 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
                     resources={resources}
                     onMCPCall={handleMCPCall}
                   />
+                )}
+
+                {activeTab === 'claude' && (
+                  <div className="h-full overflow-y-auto bg-gray-50">
+                    <div className="p-6 max-w-4xl mx-auto">
+                      <div className="text-center mb-6">
+                        <h2 className="text-2xl font-bold text-gray-900 mb-2">Claude Desktop Integration</h2>
+                        <p className="text-gray-600">
+                          Connect your generated MCP server to Claude Desktop for seamless AI integration
+                        </p>
+                      </div>
+
+                      {/* Status Cards */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                        <Card className={`${serverStatus === 'running' ? 'border-green-200 bg-green-50' : 'border-gray-200'}`}>
+                          <CardContent className="p-4 text-center">
+                            <div className="flex items-center justify-center space-x-2 mb-2">
+                              <Server className="w-5 h-5" />
+                              {getStatusIcon(serverStatus)}
+                            </div>
+                            <div className="font-medium">MCP Server</div>
+                            <div className={`text-sm ${getStatusColor(serverStatus)}`}>
+                              {serverStatus}
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        <Card className={`${exposureStatus === 'exposed' ? 'border-green-200 bg-green-50' : 'border-gray-200'}`}>
+                          <CardContent className="p-4 text-center">
+                            <div className="flex items-center justify-center space-x-2 mb-2">
+                              <Globe className="w-5 h-5" />
+                              {getStatusIcon(exposureStatus)}
+                            </div>
+                            <div className="font-medium">Server Exposure</div>
+                            <div className={`text-sm ${getStatusColor(exposureStatus)}`}>
+                              {exposureStatus}
+                            </div>
+                          </CardContent>
+                        </Card>
+
+                        <Card className={`${configStatus === 'ready' ? 'border-green-200 bg-green-50' : 'border-gray-200'}`}>
+                          <CardContent className="p-4 text-center">
+                            <div className="flex items-center justify-center space-x-2 mb-2">
+                              <Settings className="w-5 h-5" />
+                              {getStatusIcon(configStatus)}
+                            </div>
+                            <div className="font-medium">Configuration</div>
+                            <div className={`text-sm ${getStatusColor(configStatus)}`}>
+                              {configStatus}
+                            </div>
+                          </CardContent>
+                        </Card>
+                      </div>
+
+                      {/* Exposure Test Results */}
+                      {exposureTestResult && (
+                        <Card className={`mb-6 ${exposureTestResult.success ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
+                          <CardContent className="p-4">
+                            <div className="flex items-center space-x-2 mb-2">
+                              {exposureTestResult.success ? (
+                                <CheckCircle2 className="w-5 h-5 text-green-600" />
+                              ) : (
+                                <XCircle className="w-5 h-5 text-red-600" />
+                              )}
+                              <span className="font-medium">
+                                Exposure Test: {exposureTestResult.success ? 'PASSED' : 'FAILED'}
+                              </span>
+                              {exposureTestResult.latency && (
+                                <span className="text-sm text-gray-600">
+                                  ({exposureTestResult.latency}ms)
+                                </span>
+                              )}
+                            </div>
+                            {exposureTestResult.error && (
+                              <p className="text-sm text-red-700">{exposureTestResult.error}</p>
+                            )}
+                            {exposureTestResult.success && exposureUrl && (
+                              <div className="mt-2">
+                                <p className="text-sm text-green-700 mb-2">Server is accessible at:</p>
+                                <div className="bg-white rounded border p-2 font-mono text-xs">
+                                  {exposureUrl}
+                                </div>
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      )}
+
+                      {/* Configuration Section */}
+                      {configStatus === 'ready' && claudeConfig && (
+                        <Card>
+                          <CardHeader>
+                            <h3 className="text-lg font-semibold">Claude Desktop Configuration</h3>
+                            <p className="text-sm text-gray-600">
+                              Copy this configuration to connect Claude Desktop to your MCP server
+                            </p>
+                          </CardHeader>
+                          <CardContent>
+                            <div className="space-y-4">
+                              {/* Config JSON */}
+                              <div>
+                                <div className="flex items-center justify-between mb-2">
+                                  <label className="text-sm font-medium text-gray-700">
+                                    Configuration JSON
+                                  </label>
+                                  <div className="flex space-x-2">
+                                    <Button size="sm" variant="outline" onClick={copyClaudeConfig}>
+                                      <Copy className="w-3 h-3 mr-1" />
+                                      Copy
+                                    </Button>
+                                    <Button size="sm" variant="outline" onClick={downloadClaudeConfig}>
+                                      <Download className="w-3 h-3 mr-1" />
+                                      Download
+                                    </Button>
+                                  </div>
+                                </div>
+                                <div className="bg-gray-900 text-white p-4 rounded-lg overflow-x-auto">
+                                  <pre className="text-xs">
+                                    {JSON.stringify(claudeConfig, null, 2)}
+                                  </pre>
+                                </div>
+                              </div>
+
+                              {/* Instructions */}
+                              <div>
+                                <label className="text-sm font-medium text-gray-700 mb-2 block">
+                                  Setup Instructions
+                                </label>
+                                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                                  <div className="whitespace-pre-line text-sm text-blue-800">
+                                    {claudeInstructions}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Terminal Test Commands */}
+                              <div>
+                                <label className="text-sm font-medium text-gray-700 mb-2 block">
+                                  Test Commands (Terminal)
+                                </label>
+                                <div className="space-y-2">
+                                  <div className="bg-gray-100 rounded p-3">
+                                    <div className="text-xs text-gray-600 mb-1">Health Check:</div>
+                                    <code className="text-sm font-mono">
+                                      curl {exposureUrl}/health
+                                    </code>
+                                  </div>
+                                  <div className="bg-gray-100 rounded p-3">
+                                    <div className="text-xs text-gray-600 mb-1">MCP Test:</div>
+                                    <code className="text-sm font-mono">
+                                      curl -X POST {exposureUrl}/mcp -H "Content-Type: application/json" -d '{`{\"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`}'
+                                    </code>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      )}
+
+                      {/* Setup Instructions for Non-Exposed State */}
+                      {exposureStatus !== 'exposed' && (
+                        <Card>
+                          <CardContent className="p-6 text-center">
+                            <Globe className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                            <h3 className="text-lg font-medium text-gray-900 mb-2">
+                              Server Not Exposed
+                            </h3>
+                            <p className="text-gray-600 mb-4">
+                              Start and expose your MCP server to generate the Claude Desktop configuration
+                            </p>
+                            {serverStatus !== 'running' ? (
+                              <Button onClick={handleStartServer} disabled={!webContainer || isRunning}>
+                                <Play className="w-4 h-4 mr-2" />
+                                Start & Expose Server
+                              </Button>
+                            ) : (
+                              <Button onClick={handleExposeServer}>
+                                <Globe className="w-4 h-4 mr-2" />
+                                Expose Server
+                              </Button>
+                            )}
+                          </CardContent>
+                        </Card>
+                      )}
+                    </div>
+                  </div>
                 )}
 
                 {activeTab === 'simulator' && (
@@ -802,6 +1169,9 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
                     <div ref={terminalRef} className="h-full font-mono text-xs">
                       <div className="mb-2">
                         <span className="text-green-400">$</span> MCP Server Terminal - {language.toUpperCase()}
+                        {exposureUrl && (
+                          <span className="text-blue-400 ml-4">Exposed at: {exposureUrl}</span>
+                        )}
                       </div>
                       <div className="space-y-1 max-h-full overflow-y-auto">
                         {terminalOutput.map((line, index) => (
@@ -812,6 +1182,11 @@ export const TestingEnvironment: React.FC<TestingEnvironmentProps> = ({
                         {serverStatus === 'running' && (
                           <div className="text-green-400 animate-pulse">
                             Server is running... Ready for MCP requests
+                          </div>
+                        )}
+                        {exposureStatus === 'exposed' && exposureUrl && (
+                          <div className="text-blue-400">
+                            🌐 Server exposed and accessible externally
                           </div>
                         )}
                       </div>
