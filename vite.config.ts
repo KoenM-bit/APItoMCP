@@ -8,12 +8,18 @@ export default defineConfig({
     exclude: ['lucide-react'],
   },
   server: {
+    port: 3000,
+    host: 'localhost',
+    strictPort: true,
     headers: {
       'Cross-Origin-Embedder-Policy': 'require-corp',
       'Cross-Origin-Opener-Policy': 'same-origin',
     },
   },
   preview: {
+    port: 3000,
+    host: 'localhost',
+    strictPort: true,
     headers: {
       'Cross-Origin-Embedder-Policy': 'require-corp',
       'Cross-Origin-Opener-Policy': 'same-origin',

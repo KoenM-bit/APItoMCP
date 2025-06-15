@@ -4,17 +4,11 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="3c88025d-106c-4cef-825c-e3f455f707b3" name="Changes" comment="First commit">
+    <list default="true" id="3c88025d-106c-4cef-825c-e3f455f707b3" name="Changes" comment="Added google authentification">
+      <change afterPath="$PROJECT_DIR$/src/components/AuthDebug.tsx" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/package-lock.json" beforeDir="false" afterPath="$PROJECT_DIR$/package-lock.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/package.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/App.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/App.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/Generator/APIInputForm.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/components/Generator/APIInputForm.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/Generator/TestingEnvironment.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/components/Generator/TestingEnvironment.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/Generator/VisualMapper.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/components/Generator/VisualMapper.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/LandingPage.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/components/LandingPage.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/components/Navigation.tsx" beforeDir="false" afterPath="$PROJECT_DIR$/src/components/Navigation.tsx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/utils/webcontainer.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/utils/webcontainer.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/vite.config.ts" beforeDir="false" afterPath="$PROJECT_DIR$/vite.config.ts" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -24,7 +18,7 @@
   <component name="Git.Settings">
     <option name="RECENT_BRANCH_BY_REPOSITORY">
       <map>
-        <entry key="$PROJECT_DIR$" value="master" />
+        <entry key="$PROJECT_DIR$" value="7fa2788077fd2063330d4c5e2f4744ae532187f3" />
       </map>
     </option>
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
@@ -42,7 +36,7 @@
   "keyToString": {
     "RunOnceActivity.OpenProjectViewOnStart": "true",
     "RunOnceActivity.ShowReadmeOnStart": "true",
-    "git-widget-placeholder": "7fa27880"
+    "git-widget-placeholder": "google-auth"
   }
 }]]></component>
   <component name="RecentsManager">
@@ -82,7 +76,15 @@
       <option name="project" value="LOCAL" />
       <updated>1749721125247</updated>
     </task>
-    <option name="localTasksCounter" value="3" />
+    <task id="LOCAL-00003" summary="Added google authentification">
+      <option name="closed" value="true" />
+      <created>1749993653490</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1749993653490</updated>
+    </task>
+    <option name="localTasksCounter" value="4" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -98,6 +100,7 @@
   </component>
   <component name="VcsManagerConfiguration">
     <MESSAGE value="First commit" />
-    <option name="LAST_COMMIT_MESSAGE" value="First commit" />
+    <MESSAGE value="Added google authentification" />
+    <option name="LAST_COMMIT_MESSAGE" value="Added google authentification" />
   </component>
 </project>
