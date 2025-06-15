@@ -1,67 +1,87 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { getAuthLogs, clearAuthLogs } from '../utils/firebase';
+import { auth } from '../utils/firebase';
 
+// Temporary debug component - add this to your landing page for testing
 export const AuthDebug: React.FC = () => {
   const { user, userProfile, loading } = useAuth();
-  const [showLogs, setShowLogs] = useState(false);
-  const [logs, setLogs] = useState('');
 
-  // Only show in development
-  if (process.env.NODE_ENV !== 'development') {
-    return null;
-  }
-
-  const handleShowLogs = () => {
-    setLogs(getAuthLogs());
-    setShowLogs(true);
+  const handleShowConsole = () => {
+    console.log('=== AUTH DEBUG INFO ===');
+    console.log('Loading:', loading);
+    console.log('User:', user);
+    console.log('Profile:', userProfile);
+    console.log('Auth current user:', auth.currentUser);
+    console.log('=== END DEBUG INFO ===');
   };
 
-  const handleClearLogs = () => {
-    clearAuthLogs();
-    setLogs('');
-    setShowLogs(false);
+  const handleForceReload = () => {
+    // Clear any stuck states and reload
+    console.log('🔧 Force reloading...');
+    window.location.reload();
   };
+
+  const handleClearStorage = () => {
+    // Clear localStorage and reload
+    console.log('🔧 Clearing storage...');
+    localStorage.clear();
+    window.location.reload();
+  };
+
+  const handleForceSync = () => {
+    // Force sync auth state
+    console.log('🔧 Attempting to force sync auth state...');
+    if (auth.currentUser && !user) {
+      console.log('🔧 Detected state desync - Firebase has user but React state does not');
+      window.location.reload(); // Quick fix: reload page to re-sync
+    } else {
+      console.log('🔧 States appear to be in sync');
+    }
+  };
+
+  // Detect state desync
+  const hasDesync = auth.currentUser && !user && !loading;
 
   return (
-    <div className="fixed bottom-4 right-4 bg-black/90 text-white p-4 rounded-lg text-xs max-w-md z-50">
-      <h3 className="font-bold mb-2 text-yellow-400">Auth Debug</h3>
+    <div className="fixed bottom-4 right-4 bg-white border border-gray-300 rounded-lg p-4 shadow-lg text-xs max-w-xs">
+      <h3 className="font-bold mb-2">🔥 Simple Auth Debug</h3>
       <div className="space-y-1 mb-3">
-        <div>Loading: <span className={loading ? 'text-red-400' : 'text-green-400'}>{loading ? 'true' : 'false'}</span></div>
-        <div>User: <span className={user ? 'text-green-400' : 'text-red-400'}>{user ? `${user.email}` : 'null'}</span></div>
-        <div>Profile: <span className={userProfile ? 'text-green-400' : 'text-red-400'}>{userProfile ? `${userProfile.email} (${userProfile.plan})` : 'null'}</span></div>
-        <div>URL: {window.location.href}</div>
+        <div>Loading: {loading ? '🔴 YES' : '✅ NO'}</div>
+        <div>User: {user ? `✅ ${user.email}` : '❌ None'}</div>
+        <div>Profile: {userProfile ? `✅ ${userProfile.email}` : '❌ None'}</div>
+        <div>Auth State: {auth.currentUser ? '✅ Signed In' : '❌ Signed Out'}</div>
+        {hasDesync && (
+          <div className="text-red-600 font-bold">⚠️ STATE DESYNC DETECTED!</div>
+        )}
       </div>
-
-      <div className="space-x-2">
+      <div className="space-y-1">
         <button
-          onClick={handleShowLogs}
-          className="bg-blue-600 hover:bg-blue-700 px-2 py-1 rounded text-xs"
+          onClick={handleShowConsole}
+          className="block w-full text-left text-blue-600 hover:underline"
         >
-          Show Logs
+          Show Debug Info
+        </button>
+        {hasDesync && (
+          <button
+            onClick={handleForceSync}
+            className="block w-full text-left text-red-600 hover:underline font-bold"
+          >
+            Fix State Desync
+          </button>
+        )}
+        <button
+          onClick={handleClearStorage}
+          className="block w-full text-left text-orange-600 hover:underline"
+        >
+          Clear Storage
         </button>
         <button
-          onClick={handleClearLogs}
-          className="bg-red-600 hover:bg-red-700 px-2 py-1 rounded text-xs"
+          onClick={handleForceReload}
+          className="block w-full text-left text-red-600 hover:underline"
         >
-          Clear Logs
+          Force Reload
         </button>
       </div>
-
-      {showLogs && (
-        <div className="mt-3 p-2 bg-gray-800 rounded max-h-40 overflow-y-auto">
-          <div className="flex justify-between items-center mb-2">
-            <span className="text-yellow-400 font-bold">Persistent Logs</span>
-            <button
-              onClick={() => setShowLogs(false)}
-              className="text-gray-400 hover:text-white"
-            >
-              ×
-            </button>
-          </div>
-          <pre className="text-xs whitespace-pre-wrap">{logs || 'No logs available'}</pre>
-        </div>
-      )}
     </div>
   );
 };

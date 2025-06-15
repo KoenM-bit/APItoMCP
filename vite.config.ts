@@ -11,18 +11,12 @@ export default defineConfig({
     port: 3000,
     host: 'localhost',
     strictPort: true,
-    headers: {
-      'Cross-Origin-Embedder-Policy': 'require-corp',
-      'Cross-Origin-Opener-Policy': 'same-origin',
-    },
+    // 🔥 REMOVED CORS headers completely - they were blocking Firebase popups
   },
   preview: {
     port: 3000,
     host: 'localhost',
     strictPort: true,
-    headers: {
-      'Cross-Origin-Embedder-Policy': 'require-corp',
-      'Cross-Origin-Opener-Policy': 'same-origin',
-    },
+    // 🔥 REMOVED CORS headers completely - they were blocking Firebase popups
   },
 });
