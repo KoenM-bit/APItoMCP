@@ -46,12 +46,12 @@ interface VisualMapperProps {
   onBack: () => void;
 }
 
-export const VisualMapper: React.FC<VisualMapperProps> = ({
-  endpoints = [],
+export const VisualMapper: React.FC<VisualMapperProps> = ({ 
+  endpoints = [], 
   info = {},
-  servers = [],
-  onNext,
-  onBack
+  servers = [], 
+  onNext, 
+  onBack 
 }) => {
   const [showPreview, setShowPreview] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -77,16 +77,16 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
   // Handle endpoint selection from visual flow
   const handleEndpointSelect = (endpointId: string) => {
     setSelectedEndpointId(endpointId);
-
+    
     // Auto-scroll to the endpoint in the sidebar
     setTimeout(() => {
       const endpointElement = document.getElementById(`endpoint-${endpointId}`);
       if (endpointElement) {
-        endpointElement.scrollIntoView({
-          behavior: 'smooth',
-          block: 'center'
+        endpointElement.scrollIntoView({ 
+          behavior: 'smooth', 
+          block: 'center' 
         });
-
+        
         // Add a brief highlight effect
         endpointElement.classList.add('highlight-endpoint');
         setTimeout(() => {
@@ -108,7 +108,7 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
   const toggleByMethod = (method: string) => {
     const methodEndpoints = endpoints.filter(ep => ep.method === method);
     const allMethodDisabled = methodEndpoints.every(ep => disabledEndpoints.has(ep.id));
-
+    
     setDisabledEndpoints(prev => {
       const newSet = new Set(prev);
       methodEndpoints.forEach(ep => {
@@ -158,9 +158,9 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
       nodes.push({
         id: endpoint.id,
         type: 'input',
-        data: {
+        data: { 
           label: (
-            <div
+            <div 
               className={`p-2 bg-gradient-to-r ${color} text-white rounded-lg min-w-[160px] cursor-pointer transition-all duration-200 ${
                 isSelected ? 'ring-2 ring-white ring-offset-2 ring-offset-blue-500 scale-105' : 'hover:scale-102'
               }`}
@@ -189,14 +189,14 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
 
     // Create individual tool nodes for each enabled endpoint
     const tools = groupEndpointsByFunction(enabledEndpoints);
-
+    
     tools.forEach((tool, index) => {
       const toolId = `tool-${index}`;
       const endpoint = tool.endpoints[0]; // Single endpoint per tool
-
+      
       nodes.push({
         id: toolId,
-        data: {
+        data: { 
           label: (
             <div className="p-3 bg-white border-2 border-purple-300 rounded-lg shadow-sm min-w-[200px]">
               <div className="flex items-center space-x-2 mb-2">
@@ -229,10 +229,10 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
     // Add custom method nodes
     customMethods.forEach((customMethod, index) => {
       const customToolId = `custom-tool-${index}`;
-
+      
       nodes.push({
         id: customToolId,
-        data: {
+        data: { 
           label: (
             <div className="p-3 bg-white border-2 border-orange-300 rounded-lg shadow-sm min-w-[200px]">
               <div className="flex items-center space-x-2 mb-2">
@@ -255,8 +255,8 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
     });
 
     // Create resource nodes for GET endpoints that return data (only enabled ones)
-    const resourceEndpoints = enabledEndpoints.filter(ep =>
-      ep.method === 'GET' &&
+    const resourceEndpoints = enabledEndpoints.filter(ep => 
+      ep.method === 'GET' && 
       !ep.path.includes('{') && // Not parameterized
       ep.responses.some((r: any) => r.statusCode >= 200 && r.statusCode < 300)
     );
@@ -264,10 +264,10 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
     resourceEndpoints.forEach((endpoint, index) => {
       const resourceId = `resource-${index}`;
       const resourceName = endpoint.path.split('/').pop() || 'Data';
-
+      
       nodes.push({
         id: resourceId,
-        data: {
+        data: { 
           label: (
             <div className="p-3 bg-white border-2 border-emerald-300 rounded-lg shadow-sm min-w-[200px]">
               <div className="flex items-center space-x-2 mb-2">
@@ -309,12 +309,12 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
     endpoints.forEach(endpoint => {
       const pathParts = endpoint.path.split('/').filter(Boolean);
       const method = endpoint.method.toLowerCase();
-
+      
       // Better resource extraction logic
       let resourceName = '';
       let toolName = '';
       let description = '';
-
+      
       // Handle different path patterns
       if (pathParts.length === 1) {
         // Simple case: /posts, /users, /comments
@@ -329,11 +329,11 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
         // Fallback: use the last non-parameter part
         resourceName = pathParts.find(part => !part.includes('{')) || pathParts[0] || 'api';
       }
-
+      
       // Clean up resource name and get singular form
       resourceName = resourceName.replace(/[{}]/g, '');
       const singularResource = resourceName.endsWith('s') ? resourceName.slice(0, -1) : resourceName;
-
+      
       // Generate tool names based on method and path structure
       if (method === 'get' && !endpoint.path.includes('{')) {
         // GET /posts -> get_all_posts
@@ -408,7 +408,7 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
   const handleGenerateCode = () => {
     // Only include enabled endpoints
     const enabledEndpoints = endpoints.filter(ep => !disabledEndpoints.has(ep.id));
-
+    
     // Extract regular tools from endpoint mapping
     const regularTools = nodes
       .filter(node => node.data.type === 'tool')
@@ -467,7 +467,7 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
   const generateToolSchema = (tool: any) => {
     const properties: any = {};
     const required: string[] = [];
-
+    
     const endpoint = tool.endpoints[0];
     if (!endpoint) return { type: 'object', properties: {} };
 
@@ -477,16 +477,16 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
         type: param.type || 'string',
         description: param.description || `${param.name} parameter`
       };
-
+      
       if (param.example) {
         properties[param.name].example = param.example;
       }
-
+      
       // Add validation constraints
       if (param.type === 'integer') {
         properties[param.name].minimum = 1;
       }
-
+      
       if (param.required) {
         required.push(param.name);
       }
@@ -545,7 +545,7 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
   // Get method counts for bulk operations
   const getMethodCounts = () => {
     const counts: Record<string, { total: number; enabled: number }> = {};
-
+    
     endpoints.forEach(ep => {
       if (!counts[ep.method]) {
         counts[ep.method] = { total: 0, enabled: 0 };
@@ -555,7 +555,7 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
         counts[ep.method].enabled++;
       }
     });
-
+    
     return counts;
   };
 
@@ -572,12 +572,12 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
           border-color: #3B82F6 !important;
           box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3) !important;
         }
-
+        
         @keyframes highlight-pulse {
-          0%, 100% {
+          0%, 100% { 
             box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
           }
-          50% {
+          50% { 
             box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.5);
           }
         }
@@ -668,7 +668,7 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
                       Disable All
                     </Button>
                   </div>
-
+                  
                   {/* Method-based toggles */}
                   <div className="space-y-1">
                     {Object.entries(methodCounts).map(([method, counts]) => (
@@ -742,7 +742,7 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
                   {filteredEndpoints.map((endpoint) => {
                     const isEnabled = !disabledEndpoints.has(endpoint.id);
                     const isSelected = selectedEndpointId === endpoint.id;
-
+                    
                     return (
                       <motion.div
                         key={endpoint.id}
@@ -752,8 +752,8 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
                         className={`p-3 rounded-lg border transition-all duration-200 cursor-pointer ${
                           isSelected
                             ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
-                            : isEnabled
-                            ? 'bg-white border-gray-200 hover:border-blue-300'
+                            : isEnabled 
+                            ? 'bg-white border-gray-200 hover:border-blue-300' 
                             : 'bg-gray-50 border-gray-200 opacity-60'
                         }`}
                         onClick={() => handleEndpointSelect(endpoint.id)}
@@ -794,8 +794,8 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
                               toggleEndpoint(endpoint.id);
                             }}
                             className={`ml-2 p-1 rounded transition-colors ${
-                              isEnabled
-                                ? 'text-green-600 hover:bg-green-100'
+                              isEnabled 
+                                ? 'text-green-600 hover:bg-green-100' 
                                 : 'text-gray-400 hover:bg-gray-200'
                             }`}
                             title={isEnabled ? 'Disable endpoint' : 'Enable endpoint'}
@@ -827,7 +827,7 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
                     Add
                   </Button>
                 </div>
-
+                
                 {customMethods.length === 0 ? (
                   <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
                     <div className="text-xs text-orange-700 mb-2">
@@ -889,7 +889,7 @@ export const VisualMapper: React.FC<VisualMapperProps> = ({
           >
             <Background />
             <Controls />
-            <MiniMap
+            <MiniMap 
               nodeColor={(node) => {
                 if (node.data.type === 'tool') return '#8B5CF6';
                 if (node.data.type === 'resource') return '#10B981';

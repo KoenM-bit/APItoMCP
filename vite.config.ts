@@ -8,15 +8,15 @@ export default defineConfig({
     exclude: ['lucide-react'],
   },
   server: {
-    headers: {
-      'Cross-Origin-Embedder-Policy': 'require-corp',
-      'Cross-Origin-Opener-Policy': 'same-origin',
-    },
+    port: 3000,
+    host: 'localhost',
+    strictPort: true,
+    // 🔥 REMOVED CORS headers completely - they were blocking Firebase popups
   },
   preview: {
-    headers: {
-      'Cross-Origin-Embedder-Policy': 'require-corp',
-      'Cross-Origin-Opener-Policy': 'same-origin',
-    },
+    port: 3000,
+    host: 'localhost',
+    strictPort: true,
+    // 🔥 REMOVED CORS headers completely - they were blocking Firebase popups
   },
 });
